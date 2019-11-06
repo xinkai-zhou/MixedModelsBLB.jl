@@ -1,0 +1,11 @@
+name = "MixedModelsBLB"
+uuid = "85c86336-00e0-11ea-3bde-951e8ffc0035"
+authors = ["xinkai-zhou <xinkaizhou@g.ucla.edu>"]
+version = "0.1.0"
+
+[deps]
+Convex = "f65535da-76fb-5f13-bab9-19810c17039a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MathProgBase = "fdba3010-5040-5b88-9595-932c9decdf73"
+Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
