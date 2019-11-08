@@ -1,4 +1,8 @@
 
+module simulation
+
+println()
+@info "simulation test"
 
 using MixedModelsBLB, Random, Distributions
 
@@ -97,3 +101,9 @@ end
 # Aggregate over the s BLB subsets
 
 
+# fit model using NLP on profiled loglikelihood
+@show β̂[1:5, :]
+@show Σ̂[1:5]
+@show τ̂[1:5]
+
+end # module

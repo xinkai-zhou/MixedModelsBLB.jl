@@ -132,4 +132,7 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
         XtX, storage_qq, storage_nq)
 end
 
+
+include("lmm.jl")
+
 end # module

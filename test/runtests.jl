@@ -1,15 +1,20 @@
 
-using MixedModelsBLB, Test
+# using MixedModelsBLB, Test
 
-@testset "foo" begin
-    x, y = 5, 7
-    @test foo(x, y) == 7
-    x = "blah"
-    @test_throws MethodError foo(x, y)
+# @testset "foo" begin
+#     x, y = 5, 7
+#     @test foo(x, y) == 7
+#     x = "blah"
+#     @test_throws MethodError foo(x, y)
+# end
+
+# @testset "bar" begin
+#     z = 4.
+#     @test bar(z) == 1.
+# end
+
+module PkgTest
+
+include("simulation.jl")
+
 end
-
-@testset "bar" begin
-    z = 4.
-    @test bar(z) == 1.
-end
-
