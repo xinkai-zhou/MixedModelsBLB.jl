@@ -109,7 +109,6 @@ function loglikelihood!(
         fill!(obs.HΣ, 0)
     end    
 
-
     # evaluate the loglikelihood
     update_res!(obs, β)
     # V = obs.Z * Σ * obs.Z' # this creates V everytime loglik is evaluated. 
@@ -120,9 +119,10 @@ function loglikelihood!(
     for i in 1:n
         obs.V[i, i] += (1 / τ[1])
     end
-    # ?? the in place cholesky should work 
-    obs.V = cholesky!(Symmetric(obs.V))
-    logl = (-1//2) * (logdet(obs.V) + dot(obs.res, obs.V \ obs.res))
+    # ?? put Vchol in the blblmmObs type
+    Vchol = cholesky(Symmetric(obs.V))
+    print(Vchol)
+    logl = (-1//2) * (logdet(Vchol) + dot(obs.res, Vchol \ obs.res))
 
     # gradient
     # if needgrad

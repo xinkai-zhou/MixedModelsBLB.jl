@@ -4,7 +4,7 @@ module simulation
 println()
 @info "simulation test"
 
-using MixedModelsBLB, Random, Distributions
+using MixedModelsBLB, Random, Distributions, LinearAlgebra
 
 
 # Simulate dataset
@@ -58,9 +58,10 @@ for j = 1:s
         obs[i] = blblmmObs(yi, Xi, Zi)
     end
     m = blblmmModel(obs) # Construct the blblmmModel type
+    print(m)
     # initialize model parameters
     init_β!(m) # initalize β and τ using least squares    
-    m.Σ .= diagm(ones(size(obs[1].Z, 2))) # initialize Σ with identity
+    m.Σ .= Diagonal(ones(size(obs[1].Z, 2))) # initialize Σ with identity
     # Fit LMM using the subsample and get parameter estimates
     fit!(m) 
     copyto!(β_b, m.β)

@@ -36,6 +36,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     storage_q2::Vector{T}
     storage_qn::Matrix{T}
     V::Matrix{T}
+    # Vchol::Matrix{T}
 end
 
 function blblmmObs(
