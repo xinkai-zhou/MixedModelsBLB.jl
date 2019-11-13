@@ -57,34 +57,18 @@ function update_res!(
     end
     nothing
 end
-# function standardize_res!(
-#     obs::blblmmObs{T}, 
-#     σinv::T
-#     ) where T <: BlasReal
-#     obs.res .*= σinv
-# end
-# function standardize_res!(
-#     m::blblmmModel{T}
-#     ) where T <: BlasReal
-#     σinv = sqrt(m.τ[1])
-#     # standardize residual
-#     for i in eachindex(m.data)
-#         standardize_res!(m.data[i], σinv)
-#     end
-#     nothing
-# end
 
 """
 update_w!(m, w)
 Update the weight vector using w
 """
 function update_w!(
-    m::blblmmModel{T}, w
-) where T <: BlasReal
+    m::blblmmModel{T}, 
+    w::Vector{T}
+    ) where T <: BlasReal
     # m.w = w # don't do this bcz it's pointing to the memory of w
     # so if we change w, then m.w will also change
     copyto!(m.w, w)
-    nothing
 end
 
 
@@ -121,7 +105,6 @@ function loglikelihood!(
     end
     # ?? put Vchol in the blblmmObs type
     Vchol = cholesky(Symmetric(obs.V))
-    print(Vchol)
     logl = (-1//2) * (logdet(Vchol) + dot(obs.res, Vchol \ obs.res))
 
     # gradient
@@ -153,6 +136,7 @@ function loglikelihood!(
     for i = 1:length(m.data)
         logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ[1], m.Σ, needgrad, needhess)
     end
+    logl
 end
 
 

@@ -53,12 +53,12 @@ for (i, grp) in enumerate(blb_id)
     # obs[i] = blblmmObs(Float64.(y[gidx]), loat64.(X[gidx, :]), Float64.(Z[gidx, :]))
     obs[i] = blblmmObs(yi, Xi, Zi)
 end
-@show obs
+# @show obs
 
 println()
 @info "print blblmmModel"
 m = blblmmModel(obs) # Construct the blblmmModel type
-@show m
+# @show m
 
 println()
 @info "show least squared initialization"
@@ -67,13 +67,16 @@ init_β!(m) # initalize β and τ using least squares
 @show m.τ
 m.Σ .= Diagonal(ones(size(obs[1].Z, 2))) # initialize Σ with identity
 
+@show loglikelihood!(m, false, false)
+
 println()
-@info "fit blblmmModel, show result"
+@info "fit blblmmModel, show results"
 # Fit LMM using the subsample and get parameter estimates
 fit!(m) 
 @show m.β
 @show m.τ
 @show m.Σ
+@show loglikelihood!(m, false, false)
 
 
 # for j = 1:s

@@ -15,6 +15,6 @@
 
 module PkgTest
 
-# include("simulation.jl")
-include("preliminary-test.jl")
+include("simulation.jl")
+# include("preliminary-test.jl")
 end
