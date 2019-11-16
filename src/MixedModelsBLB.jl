@@ -9,7 +9,7 @@ using LinearAlgebra: BlasReal, copytri!
 
 export blblmmObs, blblmmModel
 export fit!, fitted, init_β!, loglikelihood!, standardize_res!
-export update_res!, update_Σ!
+export update_res!, update_Σ!, update_w!
 
 """
 blblmmObs
@@ -32,12 +32,12 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
     xtz::Matrix{T}  # Xi'Zi (p-by-q)
-    storage_q1::Vector{T}
-    storage_q2::Vector{T}
     storage_qn::Matrix{T}
     V::Matrix{T}
-    # Vchol::Matrix{T}
 end
+#storage_q1::Vector{T}
+#storage_q2::Vector{T}
+# Vchol::Matrix{T}
 
 function blblmmObs(
     y::Vector{T},
@@ -57,17 +57,17 @@ function blblmmObs(
     xtx = transpose(X) * X
     ztz = transpose(Z) * Z
     xtz = transpose(X) * Z
-    storage_q1 = Vector{T}(undef, q)
-    storage_q2 = Vector{T}(undef, q)
     storage_qn = Matrix{T}(undef, q, n)
     V = Matrix{T}(undef, n, n) 
-    # constructor
     blblmmObs{T}(y, X, Z, 
         ∇β, ∇τ, ∇Σ, Hβ, Hτ, HΣ,
         res, xtx, ztz, xtz,
-        storage_q1, storage_q2, 
         storage_qn, V)
 end
+# constructor
+#storage_q1 = Vector{T}(undef, q)
+#storage_q2 = Vector{T}(undef, q)
+#storage_q1, storage_q2, 
 
 """
 blblmmModel

@@ -101,8 +101,9 @@ function loglikelihood!(
     mul!(obs.V, obs.Z, obs.storage_qn)
     # V = obs.Z * Σ * obs.Z' + (1 / τ[1]) * I
     for i in 1:n
-        obs.V[i, i] += (1 / τ[1])
+        obs.V[i, i] += (1 / τ) # instead of τ[1]
     end
+    
     # ?? put Vchol in the blblmmObs type
     Vchol = cholesky(Symmetric(obs.V))
     logl = (-1//2) * (logdet(Vchol) + dot(obs.res, Vchol \ obs.res))
@@ -136,13 +137,17 @@ function loglikelihood!(
     for i = 1:length(m.data)
         logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ[1], m.Σ, needgrad, needhess)
     end
+    # print("m.τ[1] = ", m.τ[1], "\n")
+    # print("logl = ", logl, "\n")
     logl
 end
 
 
 function fit!(
     m::blblmmModel,
-    solver=Ipopt.IpoptSolver(print_level=0)
+    #solver=Ipopt.IpoptSolver(print_level=6)
+    # solver=NLopt.NLoptSolver(algorithm=:LN_COBYLA, maxeval=10000)
+    solver=NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000)
     )
     p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
     npar = p + 1 + (q * (q + 1)) >> 1
@@ -160,12 +165,17 @@ function fit!(
     par0 = Vector{Float64}(undef, npar)
     modelpar_to_optimpar!(par0, m)
     MathProgBase.setwarmstart!(optm, par0)
+    #print("after setwarmstart, par0 = ", par0, "\n")
     # optimize
     MathProgBase.optimize!(optm)
+    # print("after optimize!, getsolution(optm) = ", MathProgBase.getsolution(optm), "\n")
     optstat = MathProgBase.status(optm)
     optstat == :Optimal || @warn("Optimization unsuccesful; got $optstat")
     # refresh gradient and Hessian
     optimpar_to_modelpar!(m, MathProgBase.getsolution(optm))
+    # print("after optimize!, after optimpar_to_modelpar!, m.β = ", m.β, "\n")
+    # print("after optimize!, after optimpar_to_modelpar!, m.Σ = ", m.Σ, "\n")
+    # print("after optimize!, after optimpar_to_modelpar!, m.τ = ", m.τ, "\n")
     loglikelihood!(m, false, false) 
     # !! after calculating gradient, change this to loglikelihood!(m, true, false) 
     m
@@ -180,9 +190,11 @@ function modelpar_to_optimpar!(
     m::blblmmModel
     )
     p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
+    #print("modelpar_to_optimpar m.β = ", m.β, "\n")
     copyto!(par, m.β)
     par[p+1] = log(m.τ[1]) # take log and then exp() later to make the problem unconstrained
     Σchol = cholesky(Symmetric(m.Σ))
+    #print("modelpar_to_optimpar Σchol = ", Σchol, "\n")
     m.ΣL .= Σchol.L
     # ?? what is the benefit of cholesky here?
     offset = p + 2
@@ -195,6 +207,7 @@ function modelpar_to_optimpar!(
         end
     end
     par
+    #print("modelpar_to_optimpar par = ", par, "\n")
 end
 
 """
@@ -206,9 +219,11 @@ function optimpar_to_modelpar!(
     par::Vector)
     p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
     copyto!(m.β, 1, par, 1, p)
+    #print("optimpar_to_modelpar par = ", par, "\n")
     # copyto!(dest, do, src, so, N)
-    # Copy N elements from collection src starting at offset so, to array dest starting at offset do. Return dest.
-    m.τ[1] = exp(par[p+1]) # why taking exponential?
+    # Copy N elements from collection src starting at offset so, 
+    # to array dest starting at offset do. Return dest.
+    m.τ[1] = exp(par[p+1])
     fill!(m.ΣL, 0)
     offset = p + 2
     for j in 1:q
@@ -220,7 +235,7 @@ function optimpar_to_modelpar!(
         end
     end
     mul!(m.Σ, m.ΣL, transpose(m.ΣL))
-    nothing
+    m
 end
 
 function MathProgBase.initialize(
@@ -243,27 +258,27 @@ function MathProgBase.eval_f(
     loglikelihood!(m, false, false)
 end
 
-function MathProgBase.eval_grad_f(
-    m::blblmmModel, 
-    grad::Vector, 
-    par::Vector)
-    p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
-    optimpar_to_modelpar!(m, par)
-    loglikelihood!(m, true, false)
-    # gradient wrt β
-    copyto!(grad, m.∇β)
-    # gradient wrt log(τ)
-    grad[p+1] = m.∇τ[1] * m.τ[1]
-    # gradient wrt L
-    mul!(m.storage_qq, m.∇Σ, m.ΣL)
-    offset = p + 2
-    for j in 1:q
-        grad[offset] = 2m.storage_qq[j, j] * m.ΣL[j, j]
-        offset += 1
-        for i in j+1:q
-            grad[offset] = 2(m.storage_qq[i, j] + m.storage_qq[j, i])
-            offset += 1
-        end
-    end
-    nothing
-end
+# function MathProgBase.eval_grad_f(
+#     m::blblmmModel, 
+#     grad::Vector, 
+#     par::Vector)
+#     p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
+#     optimpar_to_modelpar!(m, par)
+#     loglikelihood!(m, true, false)
+#     # gradient wrt β
+#     copyto!(grad, m.∇β)
+#     # gradient wrt log(τ)
+#     grad[p+1] = m.∇τ[1] * m.τ[1]
+#     # gradient wrt L
+#     mul!(m.storage_qq, m.∇Σ, m.ΣL)
+#     offset = p + 2
+#     for j in 1:q
+#         grad[offset] = 2m.storage_qq[j, j] * m.ΣL[j, j]
+#         offset += 1
+#         for i in j+1:q
+#             grad[offset] = 2(m.storage_qq[i, j] + m.storage_qq[j, i])
+#             offset += 1
+#         end
+#     end
+#     nothing
+# end

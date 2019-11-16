@@ -13,7 +13,7 @@ p = 1
 q = 1
 reps = 5 # number of observations from each individual
 y = 1 .+ # fixed intercept
-    repeat(rand(Normal(0, 1), N), inner = reps) # random intercept, standard normal
+    repeat(rand(Normal(0, 1), N), inner = reps) + # random intercept, standard normal
     rand(Normal(0, 1), reps * N); # error, standard normal
 X = fill(1., (reps * N, p));
 Z = fill(1., (reps * N, q));
