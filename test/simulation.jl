@@ -130,9 +130,9 @@ end
 @show Σ̂
 @show τ̂
 
-# writedlm("beta-hat.csv", β̂, ',')
-# writedlm("sigma-hat.csv", Σ̂, ',')
-# writedlm("tau-hat.csv", τ̂, ',')
+writedlm("beta-hat.csv", β̂, ',')
+writedlm("sigma-hat.csv", Σ̂, ',')
+writedlm("tau-hat.csv", τ̂, ',')
 
 end # module
 
