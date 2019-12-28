@@ -90,7 +90,7 @@ function loglikelihood!(
     if needhess
         fill!(obs.Hβ, 0)
         fill!(obs.Hτ, 0)
-        fill!(obs.HΣ, 0)
+        fill!(obs.HΣ, 0) 
     end    
 
     # evaluate the loglikelihood
@@ -104,9 +104,11 @@ function loglikelihood!(
         obs.V[i, i] += (1 / τ) # instead of τ[1]
     end
     
-    # ?? put Vchol in the blblmmObs type
-    Vchol = cholesky(Symmetric(obs.V))
-    logl = (-1//2) * (logdet(Vchol) + dot(obs.res, Vchol \ obs.res))
+    
+    # Vchol = cholesky(Symmetric(obs.V))
+    cholesky!(Symmetric(obs.V)) # in place cholesky
+    ldiv!(storage_n1, obs.V, obs.res)
+    logl = (-1//2) * (logdet(obs.V) + dot(obs.res, storage_n1))
 
     # gradient
     # if needgrad
@@ -193,6 +195,7 @@ function modelpar_to_optimpar!(
     #print("modelpar_to_optimpar m.β = ", m.β, "\n")
     copyto!(par, m.β)
     par[p+1] = log(m.τ[1]) # take log and then exp() later to make the problem unconstrained
+    print("modelpar_to_optimpar m.β = ", m.Σ, "\n")
     Σchol = cholesky(Symmetric(m.Σ))
     #print("modelpar_to_optimpar Σchol = ", Σchol, "\n")
     m.ΣL .= Σchol.L

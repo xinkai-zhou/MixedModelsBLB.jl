@@ -2,14 +2,27 @@ __precompile__()
 
 module MixedModelsBLB
 
-using Convex, LinearAlgebra, MathProgBase, Reexport
+using MathProgBase
+using Reexport
+using Distributions
+using JuliaDB
+using LinearAlgebra
+using MixedModels
+using Random
+using StatsModels
+using Convex
+
 using LinearAlgebra: BlasReal, copytri!
+
 @reexport using Ipopt
 @reexport using NLopt
+@reexport using MixedModels
 
 export blblmmObs, blblmmModel
 export fit!, fitted, init_β!, loglikelihood!, standardize_res!
 export update_res!, update_Σ!, update_w!
+export print_matrices
+export blb_one_subset, blb_full_data
 
 """
 blblmmObs
@@ -32,6 +45,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
     xtz::Matrix{T}  # Xi'Zi (p-by-q)
+    storage_n1::Vector{T}
     storage_qn::Matrix{T}
     V::Matrix{T}
 end
@@ -57,12 +71,13 @@ function blblmmObs(
     xtx = transpose(X) * X
     ztz = transpose(Z) * Z
     xtz = transpose(X) * Z
+    storage_n1 = Vector{T}(undef, n)
     storage_qn = Matrix{T}(undef, q, n)
     V = Matrix{T}(undef, n, n) 
     blblmmObs{T}(y, X, Z, 
         ∇β, ∇τ, ∇Σ, Hβ, Hτ, HΣ,
         res, xtx, ztz, xtz,
-        storage_qn, V)
+        storage_n1, storage_qn, V)
 end
 # constructor
 #storage_q1 = Vector{T}(undef, q)
@@ -85,7 +100,6 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     # parameters
     β::Vector{T}    # p-vector of mean regression coefficients
     τ::Vector{T}    # inverse of linear regression variance parameter 
-    # ?? why not just use variance
     Σ::Matrix{T}    # q-by-q (psd) matrix
     # working arrays
     ΣL::Matrix{T}
@@ -135,5 +149,6 @@ end
 
 
 include("lmm.jl")
+include("blb.jl")
 
 end # module

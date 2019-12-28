@@ -48,7 +48,8 @@ println()
 for j = 1:s
     # Subsetting
     # take a subsample of size b w/o replacement
-    sample!(id, blb_id; replace = false)
+    # ?? Here we should sample from the unique IDs.
+    sample!(unique(id), blb_id; replace = false)
     sort!(blb_id) # sort the ids
     # construct blblmmObs and blblmmModel for the subset
     obs = Vector{blblmmObs{Float64}}(undef, b)
