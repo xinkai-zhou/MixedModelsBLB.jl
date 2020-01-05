@@ -16,6 +16,7 @@ function init_β!(
         # Update the vector y as alpha*A*x + beta*y or alpha*A'x + beta*y according to tA. 
         # alpha and beta are scalars. Return the updated y.
     end
+    # print("m.XtX = ", m.XtX, "\n")
     # least square solution for β
     ldiv!(m.β, cholesky(Symmetric(m.XtX)), xty)
     # ldiv!(Y, A, B) -> Y
@@ -105,10 +106,12 @@ function loglikelihood!(
     end
     
     
-    # Vchol = cholesky(Symmetric(obs.V))
-    cholesky!(Symmetric(obs.V)) # in place cholesky
-    ldiv!(storage_n1, obs.V, obs.res)
-    logl = (-1//2) * (logdet(obs.V) + dot(obs.res, storage_n1))
+    Vchol = cholesky(Symmetric(obs.V))
+    logl = (-1//2) * (logdet(Vchol) + dot(obs.res, Vchol \ obs.res))
+    # !!!!! REWRITE IT. THE FOLLOWING CODE HAS BUGS!
+    # cholesky!(Symmetric(obs.V)) # in place cholesky
+    # ldiv!(obs.storage_n1, obs.V, obs.res)
+    # logl = (-1//2) * (logdet(obs.V) + dot(obs.res, obs.storage_n1))
 
     # gradient
     # if needgrad
@@ -195,7 +198,7 @@ function modelpar_to_optimpar!(
     #print("modelpar_to_optimpar m.β = ", m.β, "\n")
     copyto!(par, m.β)
     par[p+1] = log(m.τ[1]) # take log and then exp() later to make the problem unconstrained
-    print("modelpar_to_optimpar m.β = ", m.Σ, "\n")
+    # print("modelpar_to_optimpar m.β = ", m.Σ, "\n")
     Σchol = cholesky(Symmetric(m.Σ))
     #print("modelpar_to_optimpar Σchol = ", Σchol, "\n")
     m.ΣL .= Σchol.L

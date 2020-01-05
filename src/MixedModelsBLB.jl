@@ -10,7 +10,9 @@ using LinearAlgebra
 using MixedModels
 using Random
 using StatsModels
+using StatsBase
 using Convex
+using DataFrames
 
 using LinearAlgebra: BlasReal, copytri!
 

@@ -1,20 +1,21 @@
 
 
 """
-    blb_one_subset(y, X, Z, id; n_boots, solver, verbose)
+    blb_one_subset(y, X, Z, id, N; n_boots, solver, verbose)
 
 Performs Bag of Little Bootstraps on a subset. 
 
 # Positional arguments 
-- `y`:
-- `X`:
-- `Z`:
-- `id`: 
+- `y`: response vector
+- `X`: design matrix for fixed effects
+- `Z`: design matrix for random effects
+- `id`: cluster identifier
+- `N`: total number of clusters
 
 # Keyword arguments
-- `n_boots`:  
-- `solver`
-- `verbose`
+- `n_boots`: number of bootstrap iterations. Default to 1000
+- `solver`: solver for the optimization problem. 
+- `verbose`: 
 
 # Values
 - `β̂`: 
@@ -26,7 +27,8 @@ function blb_one_subset(
     y::Vector{T}, 
     X::Matrix{T}, 
     Z::Matrix{T}, 
-    id::Vector{Int64};
+    id::Vector{Int64},
+    N::Int64;
     # keyword arguments
     n_boots::Int64 = 1000,
     solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
@@ -39,12 +41,21 @@ function blb_one_subset(
     # we initialize  β̂ as Vector{Matrix{Float64}}(undef, n_subsets) 
 
     # Initialize arrays for storing the results
-    β̂ = [Vector{Float64}(undef, p) for i = 1:n_boots]
-    # If we use fill(Vector{Float64}(undef, p), s*r), then all elements of this vector
-    # refer to the same empty vector. So if we use copyto!() to update, all elements of 
-    # the vector will be updated with the same value.
-    Σ̂ = [Matrix{Float64}(undef, q, q) for i = 1:n_boots]
+    β̂ = Matrix{Float64}(undef, n_boots, p)
+    # print("initialized β̂ =", β̂, "\n")
+    # print("size of β̂ =", size(β̂), "\n")
+    Σ̂ = Matrix{Float64}(undef, n_boots, q) # only save the diagonals
     τ̂ = zeros(0)
+
+    # β̂ = [Vector{Float64}(undef, p) for i = 1:n_boots]
+    # # If we use fill(Vector{Float64}(undef, p), s*r), then all elements of this vector
+    # # refer to the same empty vector. So if we use copyto!() to update, all elements of 
+    # # the vector will be updated with the same value.
+    # Σ̂ = [Matrix{Float64}(undef, q, q) for i = 1:n_boots]
+    # τ̂ = zeros(0)
+
+    # Initialize an array for storing multinomial counts
+    ns = zeros(b)
 
     # Initialize a vector of the blblmmObs objects
     obs = Vector{blblmmObs{Float64}}(undef, b)
@@ -62,17 +73,19 @@ function blb_one_subset(
     β_b = similar(m.β)
     Σ_b = similar(m.Σ)
     τ_b = similar(m.τ)
-
+    
     # Initalize parameters
     init_β!(m) 
     m.Σ .= Diagonal(ones(size(obs[1].Z, 2))) # initialize Σ with identity
-
+    
     # Fit LMM using the subsample and get parameter estimates
     fit!(m) 
     copyto!(β_b, m.β)
     copyto!(Σ_b, m.Σ)
     copyto!(τ_b, m.τ)
-    
+    # print("β_b = ", β_b, "\n")
+    # print("Σ_b = ", Σ_b, "\n")
+
     # Bootstrapping
     for k = 1:n_boots
         verbose && print("Bootstrap iteration", k, "\n")
@@ -96,35 +109,53 @@ function blb_one_subset(
         # Use weighted loglikelihood to fit the bootstrapped dataset
         fit!(m)
         
+        # print("m.β = ", m.β, "\n")
+        # print("diag(m.Σ) = ", diag(m.Σ), "\n")
+
         # extract estimates
+        β̂[k, :] .= m.β 
+        # i thought we use copyto() because ...
+        # however, here I used .= to allocate, and when m.β gets updated, β̂[k, :] doesn't change.
+        # so when to use copyto() ?
+        Σ̂[k, :] .= diag(m.Σ)
+        # copyto!(β̂[k, :], m.β)
+        # copyto!(Σ̂[k, :], diag(m.Σ))
+        push!(τ̂, m.τ[1])
+
+        # print("β̂[k, :] = ", β̂[k, :], "\n")
+        # print("Σ̂[k, :] = ", Σ̂[k, :], "\n")
+        # Original implementation
         # i = (j-1) * r + k # the index for storage purpose
-        copyto!(β̂[k], m.β)
-        copyto!(Σ̂[k], m.Σ) # copyto!(Σ̂[i], m.Σ) doesn't work. how to index into a vector of matrices?
-        push!(τ̂, m.τ[1]) # ?? better ways to do this?
+        # copyto!(β̂[k], m.β)
+        # copyto!(Σ̂[k], m.Σ) # copyto!(Σ̂[i], m.Σ) doesn't work. how to index into a vector of matrices?
+        # push!(τ̂, m.τ[1]) # ?? better ways to do this?
         
     end
+    # print("updated β̂ =", β̂, "\n")
+    # print("updated Σ̂ =", Σ̂, "\n")
     return β̂, Σ̂, τ̂
 end
 
 
 
 """
-    blb_full_data(y, X, Z, id; n_subsets, r, solver, verbose)
+    blb_full_data(y, X, Z, id, N; subset_size, n_subsets, n_boots, solver, verbose)
 
-Performs Bag of Little Bootstraps on the full dataset.
+Performs Bag of Little Bootstraps on the full dataset. This interface is intended for smaller datasets that can be loaded in memory.
+
 
 # Positional arguments 
-- `y`:
-- `X`:
-- `Z`:
-- `id`: 
+- `y`: response vector
+- `X`: design matrix for fixed effects
+- `Z`: design matrix for random effects
+- `id`: cluster identifier
 
 # Keyword arguments
-- `b`:
-- `n_subsets`:
-- `subset_size`:  
-- `solver`:
-- `verbose`:
+- `subset_size`: number of clusters in the subset. Default to the square root of the total number of clusters.
+- `n_subsets`: number of subsets.
+- `n_boots`: number of bootstrap iterations. Default to 1000
+- `solver`: solver for the optimization problem. 
+- `verbose`: 
 
 # Values
 - `β̂`: A s * subset_size vector of vectors
@@ -137,7 +168,7 @@ function blb_full_data(
     y::Vector{T}, 
     X::Matrix{T}, 
     Z::Matrix{T}, 
-    id::Vector{T};
+    id::Vector{Int64};
     # keyword arguments
     subset_size::Int64 = floor(sqrt(length(unique(id)))),
     n_subsets::Int64 = 10,
@@ -147,6 +178,8 @@ function blb_full_data(
     ) where T <: BlasReal 
 
     p, q = size(X, 2), size(Z, 2)
+    N = length(unique(id))
+    # print("p = ", p, "\n")
     # Initialize arrays for storing the results
     # !! maybe use three dimensional arrays to avoid ugly subsetting    
     β̂ = [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
@@ -154,8 +187,8 @@ function blb_full_data(
     τ̂ = zeros(0)
 
     blb_id = fill(0, subset_size)
-    # multi-threading? julia 1.3, add a macro?
-    for j = 1:n_subsets
+    
+    Threads.@threads  for j = 1:n_subsets
         sample!(id, blb_id; replace = false)
         sort!(blb_id)
         β̂[((j-1) * n_boots + 1):(j * n_boots)], 
@@ -165,7 +198,8 @@ function blb_full_data(
             y[id .== blb_id],
             X[id .== blb_id],
             Z[id .== blb_id],
-            id[id .== blb_id];
+            id[id .== blb_id],
+            N = N;
             n_boots = n_boots,
             solver = solver,
             verbose = verbose
@@ -178,18 +212,21 @@ end
 
 
 """
-    blb_full_data(file; n_subsets, r, solver, verbose)
+    blb_full_data(file, f; id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose)
 
-Performs Bag of Little Bootstraps on the full dataset.
+Performs Bag of Little Bootstraps on the full dataset. This interface is intended for larger datasets that cannot fit in memory.
 
 # Positional arguments 
-- `file`: File path.
+- `file`: file/folder path.
+- `f`: model formula.
 
 # Keyword arguments
-- `subset_size`: Size of the BLB subset. 
-- `n_subsets`: Number of subsets, default to 10
-- `subset_size`: Number of Monte Carlo iterations, default to 1000
-- `solver`: 
+- `id_name`: name of the cluster identifier variable. String.
+- `cat_names`: a vector of the names of the categorical variables.
+- `subset_size`: number of clusters in the subset. Default to the square root of the total number of clusters.
+- `n_subsets`: number of subsets.
+- `n_boots`: number of bootstrap iterations. Default to 1000
+- `solver`: solver for the optimization problem. 
 - `verbose`: 
 
 # Values
@@ -209,7 +246,7 @@ function blb_full_data(
     # fe_name::Union{String, Vector{String}, nothing} = nothing,
     # re_name::Union{String, Vector{String}, nothing} = nothing,
     # this is the only thing we need for subsampling
-    id_name::Vector{Int32},
+    id_name::String,
     cat_names::Vector{String},
     subset_size::Int64,
     n_subsets::Int64 = 10,
@@ -226,7 +263,7 @@ function blb_full_data(
     # Connect to the dataset/folder
     ftable = JuliaDB.loadtable(
         file, 
-        datacols = filter(x -> x != nothing, var_name)
+        datacols = filter(x -> x != nothing, vcat(lhs_name, rhs_name))
     )
 
     # By chance, certain factors may not show up in a subset. To make sure this does not happen, we need to 
@@ -240,22 +277,25 @@ function blb_full_data(
     # because that's when we do recoding of categorical vars.
 
     # Initialize arrays for storing the results
-    β̂ = Vector{Matrix{Float64}}(undef, n_subsets) 
+    β̂ = Vector{Matrix{Float64}}(undef, n_subsets)
+    print("blb_full_data initialized β̂ = ", β̂, "\n") 
     # original initialization: [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
-    Σ̂ = Vector{Matrix{Float64}}(undef, n_subsets) #[Matrix{Float64}(undef, q, q) for i = 1:(n_subsets * subset_size)]
-    τ̂ = zeros(0)
-
+    Σ̂ = Vector{Matrix{Float64}}(undef, n_subsets) 
+    #[Matrix{Float64}(undef, q, q) for i = 1:(n_subsets * subset_size)]
+    τ̂ = Vector{Vector{Float64}}(undef, n_subsets) 
     
     # Load the id column
     id = JuliaDB.select(ftable, Symbol(id_name))
     # Since the data may not be balanced, we find the number of repeats per subject
     id_counts = StatsBase.countmap(id)
     id_unique = unique(id)
+    N = length(id_unique)
 
     # Initialize an array to store the unique blb IDs
     blb_id_unique = fill(0, subset_size)
 
-    Threads.@threads  for j = 1:n_subsets
+    # Threads.@threads  
+    for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
 
         # Count the total number of observations in the subset.
@@ -266,6 +306,7 @@ function blb_full_data(
         # intercept = fill(1., n_obs)
 
         subset_good = false
+        local subset_indices # declare local so that subset_indices is visible after the loop
         while !subset_good
             # Sample from the full dataset
             sample!(id_unique, blb_id_unique; replace = false)
@@ -281,16 +322,30 @@ function blb_full_data(
                 subset_good = true
             end
         end
+        # print("subset_indices = ", subset_indices, "\n")
         # Create the LinearMixedModel object using the subset
         # !!! using @views
-        m = LinearMixedModel(f, ftable[subset_indices, ])
-        # Extract y, X, Z, id
-        β̂[j] = # return from blb_one_subset(), a matrix
-        β̂[((j-1) * n_boots + 1):(j * n_boots)], 
-        Σ̂[((j-1) * n_boots + 1):(j * n_boots)], 
-        τ̂[((j-1) * n_boots + 1):(j * n_boots)] = blb_one_subset(
-            m.y, m.X, transpose(first(m.reterms).z), id[subset_indices]; 
-            n_boots = n_boots, solver = solver, verbose = verbose
+        # m = LinearMixedModel(f, ftable[subset_indices, ])
+
+        # To use LinearMixedModel(), 
+        # we need to transform the id column in ftable to categorical type.
+        # Currently I do this by converting the table to DataFrame, but this is 
+        # not efficient. Will find better methods. !!!!!!!
+        df = DataFrame(ftable[subset_indices, ])
+        categorical!(df, Symbol("id"))
+        m = LinearMixedModel(f, df)
+        
+        # print("m.X", m.X, "\n")
+        # return from blb_one_subset(), a matrix
+        β̂[j], Σ̂[j], τ̂[j] = blb_one_subset(
+            m.y, 
+            m.X, 
+            copy(transpose(first(m.reterms).z)), 
+            id[subset_indices],
+            N; 
+            n_boots = n_boots, 
+            solver = solver, 
+            verbose = verbose
         )
         ####
         # y = select(ftable, Symbol(y_name))[subset_indices, ]
@@ -298,8 +353,9 @@ function blb_full_data(
         # isnothing(fe_name) ? X = intercept : X = hcat(intercept, JuliaDB.select(ftable, map(Symbol, fe_name))[subset_indices, ])
         # isnothing(re_name) ? Z = intercept : Z = hcat(intercept, JuliaDB.select(ftable, map(Symbol, re_name))[subset_indices, ])
         ####
-        j += 1
+        # j += 1
     end
+    # print("blb_full_data β̂ = ", β̂, "\n") 
     return β̂, Σ̂, τ̂
 end
 
