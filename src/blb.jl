@@ -114,9 +114,8 @@ function blb_one_subset(
 
         # extract estimates
         β̂[k, :] .= m.β 
-        # i thought we use copyto() because ...
-        # however, here I used .= to allocate, and when m.β gets updated, β̂[k, :] doesn't change.
-        # so when to use copyto() ?
+        # if the assignment is for certain rows of a matrix, then ".=" works fine and we don't need copyto()
+        # actually copyto() wouldn't work.
         Σ̂[k, :] .= diag(m.Σ)
         # copyto!(β̂[k, :], m.β)
         # copyto!(Σ̂[k, :], diag(m.Σ))
@@ -234,7 +233,6 @@ Performs Bag of Little Bootstraps on the full dataset. This interface is intende
 - `Σ̂`: 
 - `τ̂`: 
 """
-
 function blb_full_data(
     # positional arguments
     # !!! could be a folder
@@ -294,8 +292,7 @@ function blb_full_data(
     # Initialize an array to store the unique blb IDs
     blb_id_unique = fill(0, subset_size)
 
-    # Threads.@threads  
-    for j = 1:n_subsets
+    Threads.@threads for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
 
         # Count the total number of observations in the subset.
