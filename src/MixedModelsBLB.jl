@@ -13,6 +13,9 @@ using StatsModels
 using StatsBase
 using Convex
 using DataFrames
+using CSV
+using InteractiveUtils
+using DelimitedFiles
 
 using LinearAlgebra: BlasReal, copytri!
 
@@ -24,7 +27,7 @@ export blblmmObs, blblmmModel
 export fit!, fitted, init_β!, loglikelihood!, standardize_res!
 export update_res!, update_Σ!, update_w!
 export print_matrices
-export blb_one_subset, blb_full_data
+export blb_one_subset, blb_full_data, testlmm
 
 """
 blblmmObs
@@ -39,16 +42,20 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     # working arrays
     ∇β::Vector{T}   # gradient wrt β
     ∇τ::Vector{T}   # gradient wrt τ
-    ∇Σ::Matrix{T}   # gradient wrt Σ 
-    Hβ::Matrix{T}   # Hessian wrt β
-    Hτ::Matrix{T}   # Hessian wrt τ
-    HΣ::Matrix{T}   # Hessian wrt Σ
+    ∇L::Matrix{T}   # gradient wrt Σ 
+    # Hβ::Matrix{T}   # Hessian wrt β
+    # Hτ::Matrix{T}   # Hessian wrt τ
+    # HΣ::Matrix{T}   # Hessian wrt Σ
     res::Vector{T}  # residual vector
+    #??? Do we need ztz, xtz?????
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
-    xtz::Matrix{T}  # Xi'Zi (p-by-q)
-    storage_n1::Vector{T}
+    # xtz::Matrix{T}  # Xi'Zi (p-by-q)
+    storage_n1::Matrix{T}
+    storage_1q::Matrix{T}
     storage_qn::Matrix{T}
+    storage_nq::Matrix{T}
+    storage_qq::Matrix{T}
     V::Matrix{T}
 end
 #storage_q1::Vector{T}
@@ -65,21 +72,28 @@ function blblmmObs(
     # working arrays
     ∇β  = Vector{T}(undef, p)
     ∇τ  = Vector{T}(undef, 1)
-    ∇Σ  = Matrix{T}(undef, q, q)
-    Hβ  = Matrix{T}(undef, p, p)
-    Hτ  = Matrix{T}(undef, 1, 1)
-    HΣ  = Matrix{T}(undef, abs2(q), abs2(q))
+    ∇L  = Matrix{T}(undef, q, q)
+    # Hβ  = Matrix{T}(undef, p, p)
+    # Hτ  = Matrix{T}(undef, 1, 1)
+    # HΣ  = Matrix{T}(undef, abs2(q), abs2(q))
     res = Vector{T}(undef, n)
     xtx = transpose(X) * X
     ztz = transpose(Z) * Z
-    xtz = transpose(X) * Z
-    storage_n1 = Vector{T}(undef, n)
+    # xtz = transpose(X) * Z
+    storage_n1 = Matrix{T}(undef, n, 1)
+    storage_1q = Matrix{T}(undef, 1, q)
     storage_qn = Matrix{T}(undef, q, n)
+    storage_nq = Matrix{T}(undef, n, q)
+    storage_qq = Matrix{T}(undef, q, q)
     V = Matrix{T}(undef, n, n) 
-    blblmmObs{T}(y, X, Z, 
-        ∇β, ∇τ, ∇Σ, Hβ, Hτ, HΣ,
-        res, xtx, ztz, xtz,
-        storage_n1, storage_qn, V)
+    blblmmObs{T}(
+        y, X, Z, 
+        ∇β, ∇τ, ∇L, 
+        # Hβ, Hτ, HΣ,
+        res, xtx, ztz, #xtz,
+        storage_n1, storage_1q, 
+        storage_qn, storage_nq, 
+        storage_qq, V)
 end
 # constructor
 #storage_q1 = Vector{T}(undef, q)
@@ -102,12 +116,13 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     # parameters
     β::Vector{T}    # p-vector of mean regression coefficients
     τ::Vector{T}    # inverse of linear regression variance parameter 
+    # we used the inverse so that the objective function is convex
     Σ::Matrix{T}    # q-by-q (psd) matrix
     # working arrays
     ΣL::Matrix{T}
     ∇β::Vector{T}   # gradient from all observations
     ∇τ::Vector{T}
-    ∇Σ::Matrix{T}
+    ∇L::Matrix{T}
     Hβ::Matrix{T}   # Hessian from all observations
     Hτ::Matrix{T}
     HΣ::Matrix{T}
@@ -130,7 +145,7 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     ΣL  = similar(Σ)
     ∇β  = Vector{T}(undef, p)
     ∇τ  = Vector{T}(undef, 1)
-    ∇Σ  = Matrix{T}(undef, q, q)
+    ∇L  = Matrix{T}(undef, q, q)
     Hβ  = Matrix{T}(undef, p, p)
     Hτ  = Matrix{T}(undef, 1, 1)
     HΣ  = Matrix{T}(undef, abs2(q), abs2(q))
@@ -145,7 +160,7 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     
     blblmmModel{T}(obsvec, w, ntotal, p, q, 
         β, τ, Σ, ΣL,
-        ∇β, ∇τ, ∇Σ, Hβ, Hτ, HΣ, 
+        ∇β, ∇τ, ∇L, Hβ, Hτ, HΣ, 
         XtX, storage_qq, storage_nq)
 end
 

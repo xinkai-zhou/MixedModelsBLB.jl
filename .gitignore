@@ -1,5 +1,7 @@
 .DS_Store
 
+test/*.csv
+#*.csv
 *.jl.cov
 *.jl.*.cov
 *.jl.mem

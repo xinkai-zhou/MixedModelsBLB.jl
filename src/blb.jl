@@ -15,25 +15,32 @@ Performs Bag of Little Bootstraps on a subset.
 # Keyword arguments
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
-- `verbose`: 
+- `verbose`: print extra information ???
 
 # Values
-- `β̂`: 
-- `Σ̂`: 
-- `τ̂`: 
+- `β̂`: a matrix of size n_boots-by-p
+- `Σ̂`: a matrix of size n_boots-by-q, which saves the diagonals of Σ̂
+- `τ̂`: a vector of size n_boots
 """
 function blb_one_subset(
     # positional arguments
+    lmm::LinearMixedModel{Float64},
     y::Vector{T}, 
-    X::Matrix{T}, 
+    X::Matrix{T}, # includes the intercept
     Z::Matrix{T}, 
     id::Vector{Int64},
     N::Int64;
     # keyword arguments
     n_boots::Int64 = 1000,
-    solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+    # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+    solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
+    MoM_init = false,
     verbose::Bool = false
     ) where T <: BlasReal 
+
+    writedlm("subset-X.csv", X, ',')
+    writedlm("subset-Z.csv", Z, ',')
+    writedlm("subset-id.csv", id, ',')
 
     b, p, q = length(unique(id)), size(X, 2), size(Z, 2)
     
@@ -72,23 +79,51 @@ function blb_one_subset(
     # Initialize arrays for storing subset estimates
     β_b = similar(m.β)
     Σ_b = similar(m.Σ)
-    τ_b = similar(m.τ)
+    τ_b = m.τ
     
     # Initalize parameters
-    init_β!(m) 
-    m.Σ .= Diagonal(ones(size(obs[1].Z, 2))) # initialize Σ with identity
+    if MoM_init 
+        # Method of Moments initialization
+        init_MoM!(m)
+        # This updates β, τ and Σ
+    else
+        # use MixedModels.jl to initialize
+        # fit model
+        MixedModels.fit!(lmm)
+        # print(lmm)
+        # print(lmm.β)
+        # print(propertynames(lmm))
+        # print(lmm.sigmas)
+        # copy value over
+        copyto!(m.β, lmm.β)
+        m.τ[1] = 1 / (lmm.σ^2)
+        m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) # initialize Σ
+    end
+    # init_β!(m) # the original LS initialization
+    
+    print("After initilization,\n")
+    print("m.β = ", m.β, "\n")
+    print("m.τ[1] = ", m.τ[1], "\n")
+    print("m.Σ = ", m.Σ, "\n")
     
     # Fit LMM using the subsample and get parameter estimates
-    fit!(m) 
+    fit!(m; solver = solver) 
+    # will remove this later because this should be exactly the same as MixedModels.fit!
     copyto!(β_b, m.β)
     copyto!(Σ_b, m.Σ)
-    copyto!(τ_b, m.τ)
+    τ_b = m.τ
+    print("finished fitting on the subset \n")
     # print("β_b = ", β_b, "\n")
     # print("Σ_b = ", Σ_b, "\n")
 
+    print("After fitting on the subset,\n")
+    print("m.β = ", m.β, "\n")
+    print("m.τ[1] = ", m.τ[1], "\n")
+    print("m.Σ = ", m.Σ, "\n")
+
     # Bootstrapping
     for k = 1:n_boots
-        verbose && print("Bootstrap iteration", k, "\n")
+        verbose && print("Bootstrap iteration ", k, "\n\n\n\n\n\n")
         # Generate a parametric bootstrap sample of y and update m.y 
         # in place by looping over blblmmModel.
         for bidx = 1:b
@@ -99,16 +134,33 @@ function blb_one_subset(
                 rand(Normal(0, sqrt(1 / τ_b[1])), length(m.data[bidx].y)) # error, standard normal
             )
         end
+        # save the data
+        y = Vector{Float64}()
+        for bidx = 1:b
+            append!(y, m.data[bidx].y)
+        end
+        writedlm("bootstrap-y.csv", y, ',')
 
         # Get weights by drawing N i.i.d. samples from multinomial
         rand!(Multinomial(N, ones(b)/b), ns) 
-        
+        writedlm("bootstrap-ns.csv", ns, ',')
+
         # Update weights in blblmmModel
         update_w!(m, ns)
         
+        print("Inside bootstrap, before fitting \n")
+        print("m.β = ", m.β, "\n")
+        print("m.τ[1] = ", m.τ[1], "\n")
+        print("m.Σ = ", m.Σ, "\n")
+
         # Use weighted loglikelihood to fit the bootstrapped dataset
-        fit!(m)
+        fit!(m; solver = solver)
         
+        print("Inside bootstrap, after fitting\n")
+        print("m.β = ", m.β, "\n")
+        print("m.τ[1] = ", m.τ[1], "\n")
+        print("m.Σ = ", m.Σ, "\n")
+
         # print("m.β = ", m.β, "\n")
         # print("diag(m.Σ) = ", diag(m.Σ), "\n")
 
@@ -121,6 +173,12 @@ function blb_one_subset(
         # copyto!(Σ̂[k, :], diag(m.Σ))
         push!(τ̂, m.τ[1])
 
+        # reset model parameter to subset estimates because 
+        # using the bootstrap estimates from each iteration may be unstable.
+        copyto!(m.β, β_b)
+        copyto!(m.Σ, Σ_b)
+        m.τ[1] = τ_b[1]
+
         # print("β̂[k, :] = ", β̂[k, :], "\n")
         # print("Σ̂[k, :] = ", Σ̂[k, :], "\n")
         # Original implementation
@@ -128,7 +186,6 @@ function blb_one_subset(
         # copyto!(β̂[k], m.β)
         # copyto!(Σ̂[k], m.Σ) # copyto!(Σ̂[i], m.Σ) doesn't work. how to index into a vector of matrices?
         # push!(τ̂, m.τ[1]) # ?? better ways to do this?
-        
     end
     # print("updated β̂ =", β̂, "\n")
     # print("updated Σ̂ =", Σ̂, "\n")
@@ -154,25 +211,28 @@ Performs Bag of Little Bootstraps on the full dataset. This interface is intende
 - `n_subsets`: number of subsets.
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
-- `verbose`: 
+- `verbose`: print extra information ???
 
 # Values
-- `β̂`: A s * subset_size vector of vectors
-- `Σ̂`: 
-- `τ̂`: 
+- `β̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-p)
+- `Σ̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-q, only saves the diagonals of Σ̂)
+- `τ̂`: a vector (of size n_subsets) of vectors (of size n_boots)
 """
 
 function blb_full_data(
     # positional arguments
-    y::Vector{T}, 
-    X::Matrix{T}, 
-    Z::Matrix{T}, 
-    id::Vector{Int64};
+    df::DataFrame,
+    f::FormulaTerm;
+    # y::Vector{T}, 
+    # X::Matrix{T}, 
+    # Z::Matrix{T}, 
+    # id::Vector{Int64};
     # keyword arguments
     subset_size::Int64 = floor(sqrt(length(unique(id)))),
     n_subsets::Int64 = 10,
     n_boots::Int64 = 1000,
-    solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+    # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+    solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
     verbose::Bool = false
     ) where T <: BlasReal 
 
@@ -190,6 +250,11 @@ function blb_full_data(
     Threads.@threads  for j = 1:n_subsets
         sample!(id, blb_id; replace = false)
         sort!(blb_id)
+
+        df_subset = df[subset_indices, :]
+        categorical!(df, Symbol("id"))
+        m = LinearMixedModel(f, df)
+
         β̂[((j-1) * n_boots + 1):(j * n_boots)], 
         Σ̂[((j-1) * n_boots + 1):(j * n_boots)], 
         τ̂[((j-1) * n_boots + 1):(j * n_boots)] = 
@@ -206,7 +271,6 @@ function blb_full_data(
     end
     return β̂, Σ̂, τ̂
 end
-
 
 
 
@@ -229,9 +293,9 @@ Performs Bag of Little Bootstraps on the full dataset. This interface is intende
 - `verbose`: 
 
 # Values
-- `β̂`: A n_subsets * subset_size vector of vectors
-- `Σ̂`: 
-- `τ̂`: 
+- `β̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-p)
+- `Σ̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-q, only saves the diagonals of Σ̂)
+- `τ̂`: a vector (of size n_subsets) of vectors (of size n_boots)
 """
 function blb_full_data(
     # positional arguments
@@ -249,7 +313,9 @@ function blb_full_data(
     subset_size::Int64,
     n_subsets::Int64 = 10,
     n_boots::Int64 = 1000,
-    solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+    MoM_init = false,
+    # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+    solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
     verbose::Bool = false
     ) where T <: BlasReal 
 
@@ -264,6 +330,15 @@ function blb_full_data(
         datacols = filter(x -> x != nothing, vcat(lhs_name, rhs_name))
     )
 
+    # df = DataFrame(ftable)
+    # categorical!(df, Symbol("id"))
+    # print("first(df, 5) = ", first(df, 5), "\n")
+    # print("formula = ", f, "\n")
+    # # categorical!(df, Symbol.(cat_names))
+    # lmm = LinearMixedModel(f, df)
+    # print(propertynames(lmm, true), "\n")
+    # print(fieldnames(typeof(lmm)), "\n")
+
     # By chance, certain factors may not show up in a subset. To make sure this does not happen, we need to 
     # count the number of levels of the categorical variables
     cat_levels = Dict{String, Int32}()
@@ -276,7 +351,7 @@ function blb_full_data(
 
     # Initialize arrays for storing the results
     β̂ = Vector{Matrix{Float64}}(undef, n_subsets)
-    print("blb_full_data initialized β̂ = ", β̂, "\n") 
+    # print("blb_full_data initialized β̂ = ", β̂, "\n") 
     # original initialization: [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
     Σ̂ = Vector{Matrix{Float64}}(undef, n_subsets) 
     #[Matrix{Float64}(undef, q, q) for i = 1:(n_subsets * subset_size)]
@@ -285,11 +360,11 @@ function blb_full_data(
     # Load the id column
     id = JuliaDB.select(ftable, Symbol(id_name))
     # Since the data may not be balanced, we find the number of repeats per subject
-    id_counts = StatsBase.countmap(id)
+    # id_counts = StatsBase.countmap(id)
     id_unique = unique(id)
     N = length(id_unique)
 
-    # Initialize an array to store the unique blb IDs
+    # Initialize an array to store the unique IDs for the subset
     blb_id_unique = fill(0, subset_size)
 
     Threads.@threads for j = 1:n_subsets
@@ -326,21 +401,29 @@ function blb_full_data(
 
         # To use LinearMixedModel(), 
         # we need to transform the id column in ftable to categorical type.
-        # Currently I do this by converting the table to DataFrame, but this is 
-        # not efficient. Will find better methods. !!!!!!!
+        # Currently I do this by converting the table to DataFrame.
+        # In later releases of MixedModels.jl, they will no longer require "id"
+        # to be cateogorical. I will change the script then.
         df = DataFrame(ftable[subset_indices, ])
         categorical!(df, Symbol("id"))
-        m = LinearMixedModel(f, df)
-        
+        # print("first(df, 5) = ", first(df, 5), "\n")
+        # print("formula = ", f, "\n")
+        # categorical!(df, Symbol.(cat_names))
+        lmm = LinearMixedModel(f, df)
+        # print(propertynames(lmm, true), "\n")
+        # print(fieldnames(typeof(lmm)), "\n")
+
         # print("m.X", m.X, "\n")
         # return from blb_one_subset(), a matrix
         β̂[j], Σ̂[j], τ̂[j] = blb_one_subset(
-            m.y, 
-            m.X, 
-            copy(transpose(first(m.reterms).z)), 
+            lmm,
+            lmm.y, 
+            lmm.X, 
+            copy(transpose(first(lmm.reterms).z)), 
             id[subset_indices],
             N; 
             n_boots = n_boots, 
+            MoM_init = MoM_init,
             solver = solver, 
             verbose = verbose
         )
@@ -355,6 +438,61 @@ function blb_full_data(
     # print("blb_full_data β̂ = ", β̂, "\n") 
     return β̂, Σ̂, τ̂
 end
+
+
+# function testlmm(
+#     file::String,
+#     f::FormulaTerm,
+#     id_name::String
+# )
+#     # lhs_name = [string(x) for x in StatsModels.termvars(f.lhs)]
+#     # rhs_name = [string(x) for x in StatsModels.termvars(f.rhs)]
+#     # var_name = Tuple(x for x in vcat(lhs_name, rhs_name)) # var names need to be in tuples for using select()
+    
+    
+#     # ftable = JuliaDB.loadtable(
+#     #     file, 
+#     #     datacols = filter(x -> x != nothing, vcat(lhs_name, rhs_name))
+#     # )
+#     df = CSV.read(file)
+#     df = DataFrame(df)
+#     print(first(df, 5), "\n")
+#     print("formula = ", f, "\n")
+#     categorical!(df, Symbol(id_name))
+#     print(first(df, 5), "\n")
+
+#     lmm = LinearMixedModel(f, df)
+#     @edit propertynames(lmm, true)
+    
+#     MixedModels.fit!(lmm)
+    
+#     print(lmm, "\n")
+    
+#     # print(MixedModels.σs(lmm), "\n")
+    
+#     print(propertynames(lmm, true), "\n")
+# end
+
+"""
+summary(x::Vector{Matrix{Float64}})
+
+# Positional arguments 
+- `x`: parameter estimates, a vector (of size n_subsets) of matrices (of size n_boots-by-k), where k is the number of parameters.
+
+# Values
+- 
+"""
+# function summary(x::Vector{Matrix{T}}) where T <: BlasReal 
+#     n_subsets = length(x)
+#     d = size(x[1], 2)
+#     est_all = zeros(d)
+#     ci = fill(0., (d, 2))
+#     for i = 1 : d
+#         est[i] = ??
+#         ci[i, :] = StatsBase.percentile(par[((i - 1) * r + 1) : ((i - 1) * r + r)], [2.5, 97.5])
+#     end
+# end
+
 
 
 
