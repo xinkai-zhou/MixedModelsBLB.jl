@@ -167,14 +167,26 @@ function loglikelihood!(
         obs.V[i, i] += (1 / τ[1]) # instead of τ
     end
     
-    try
-        Vchol = cholesky(Symmetric(obs.V))
-    catch
-        print("Σ=", Σ, "\n")
-        print("τ[1]=", τ[1], "\n")
-        print("obs.V=", obs.V, "\n")
+    # print("Σ=", Σ, "\n")
+    # print("τ[1]=", τ[1], "\n")
+    # print("obs.V=", obs.V, "\n")
+
+    # try
+    #     Vchol = cholesky(Symmetric(obs.V), Val(true))
+    # catch
+    #     print("Σ=", Σ, "\n")
+    #     print("τ[1]=", τ[1], "\n")
+    #     print("obs.V=", obs.V, "\n")
+    # end
+    try 
+        Vchol = cholesky(Symmetric(obs.V), Val(true))
+    catch y
+        if isa(y, RankDeficientException)
+            logl = -Inf
+            return logl
+        end
     end
-    Vchol = cholesky(Symmetric(obs.V))
+    Vchol = cholesky(Symmetric(obs.V), Val(true))
     ldiv!(obs.storage_n1, Vchol, obs.res)
     logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
     # Since we will use obs.V later for gradient, we cannot do in place cholesky as below.

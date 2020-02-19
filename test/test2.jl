@@ -96,12 +96,13 @@ Random.seed!(1234)
     n_subsets = 10, 
     n_boots = 500,
     MoM_init = false,
-    solver = Ipopt.IpoptSolver(print_level = 0),
-    # solver = Ipopt.IpoptSolver(
-    #     print_level = 5, 
-    #     derivative_test = "first-order", 
-    #     derivative_test_print_all = "yes"
-    # ),
+    # solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
+    # solver = Ipopt.IpoptSolver(print_level = 0),
+    solver = Ipopt.IpoptSolver(
+        print_level = 5, 
+        derivative_test = "first-order", 
+        derivative_test_print_all = "yes"
+    ),
     # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
     # solver = Ipopt.IpoptSolver(print_level = 0),
     verbose = true

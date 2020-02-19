@@ -38,9 +38,9 @@ function blb_one_subset(
     verbose::Bool = false
     ) where T <: BlasReal 
 
-    writedlm("subset-X.csv", X, ',')
-    writedlm("subset-Z.csv", Z, ',')
-    writedlm("subset-id.csv", id, ',')
+    # writedlm("subset-X.csv", X, ',')
+    # writedlm("subset-Z.csv", Z, ',')
+    # writedlm("subset-id.csv", id, ',')
 
     b, p, q = length(unique(id)), size(X, 2), size(Z, 2)
     
@@ -79,8 +79,24 @@ function blb_one_subset(
     # Initialize arrays for storing subset estimates
     β_b = similar(m.β)
     Σ_b = similar(m.Σ)
-    τ_b = m.τ
+    τ_b = similar(m.τ)
     
+    # # Testing MoM initialization
+    # print("Initialize with MoM and print results\n")
+    # init_MoM!(m)
+    # print("MoM m.β = ", m.β, "\n")
+    # print("MoM m.τ[1] = ", m.τ[1], "\n")
+    # print("MoM m.Σ = ", m.Σ, "\n\n\n")
+
+    # MixedModels.fit!(lmm)
+    # copyto!(m.β, lmm.β)
+    # m.τ[1] = 1 / (lmm.σ^2)
+    # m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) 
+    # print("Initialize with LMM and print results\n")
+    # print("LMM m.β = ", m.β, "\n")
+    # print("LMM m.τ[1] = ", m.τ[1], "\n")
+    # print("LMM m.Σ = ", m.Σ, "\n\n\n")
+
     # Initalize parameters
     if MoM_init 
         # Method of Moments initialization
@@ -96,6 +112,7 @@ function blb_one_subset(
         # print(lmm.sigmas)
         # copy value over
         copyto!(m.β, lmm.β)
+        # copyto!(m.τ, [1 / (lmm.σ^2)])
         m.τ[1] = 1 / (lmm.σ^2)
         m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) # initialize Σ
     end
@@ -111,7 +128,7 @@ function blb_one_subset(
     # will remove this later because this should be exactly the same as MixedModels.fit!
     copyto!(β_b, m.β)
     copyto!(Σ_b, m.Σ)
-    τ_b = m.τ
+    copyto!(τ_b, m.τ)
     print("finished fitting on the subset \n")
     # print("β_b = ", β_b, "\n")
     # print("Σ_b = ", Σ_b, "\n")
@@ -134,16 +151,16 @@ function blb_one_subset(
                 rand(Normal(0, sqrt(1 / τ_b[1])), length(m.data[bidx].y)) # error, standard normal
             )
         end
-        # save the data
-        y = Vector{Float64}()
-        for bidx = 1:b
-            append!(y, m.data[bidx].y)
-        end
-        writedlm("bootstrap-y.csv", y, ',')
+        # # save the data
+        # y = Vector{Float64}()
+        # for bidx = 1:b
+        #     append!(y, m.data[bidx].y)
+        # end
+        # writedlm("bootstrap-y.csv", y, ',')
 
         # Get weights by drawing N i.i.d. samples from multinomial
         rand!(Multinomial(N, ones(b)/b), ns) 
-        writedlm("bootstrap-ns.csv", ns, ',')
+        # writedlm("bootstrap-ns.csv", ns, ',')
 
         # Update weights in blblmmModel
         update_w!(m, ns)
@@ -177,7 +194,8 @@ function blb_one_subset(
         # using the bootstrap estimates from each iteration may be unstable.
         copyto!(m.β, β_b)
         copyto!(m.Σ, Σ_b)
-        m.τ[1] = τ_b[1]
+        copyto!(m.τ, τ_b)
+        # m.τ[1] = τ_b[1]
 
         # print("β̂[k, :] = ", β̂[k, :], "\n")
         # print("Σ̂[k, :] = ", Σ̂[k, :], "\n")
