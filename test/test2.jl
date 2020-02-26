@@ -88,25 +88,28 @@ println()
 Random.seed!(1234)
 
 β̂, Σ̂, τ̂ = blb_full_data(
-    "testfile.csv", 
+    "data/testfile.csv", 
     @formula(y ~ 1 + x1 + x2 + (1 | id)); 
     id_name = "id", 
     cat_names = ["x2"], 
     subset_size = 300,
     n_subsets = 10, 
-    n_boots = 500,
+    n_boots = 10,
     MoM_init = false,
     # solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
-    # solver = Ipopt.IpoptSolver(print_level = 0),
-    solver = Ipopt.IpoptSolver(
-        print_level = 5, 
-        derivative_test = "first-order", 
-        derivative_test_print_all = "yes"
-    ),
+    solver = Ipopt.IpoptSolver(print_level = 0),
+    # solver = Ipopt.IpoptSolver(
+    #     print_level = 5, 
+    #     derivative_test = "first-order", 
+    #     derivative_test_print_all = "yes"
+    # ),
     # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
     # solver = Ipopt.IpoptSolver(print_level = 0),
     verbose = true
 )
+
+
+
 
 # β̂, Σ̂, τ̂ = blb_full_data(
 #     "testfile.csv", 
@@ -129,8 +132,26 @@ Random.seed!(1234)
 #     @formula(Reaction ~ 1 + Days + (Days | Subject)), 
 #     "Subject"
 # ) 
-writedlm("beta-hat.csv", β̂, ',')
-writedlm("sigma-hat.csv", Σ̂, ',')
-writedlm("tau-hat.csv", τ̂, ',')
+writedlm("data/beta-hat.csv", β̂, ',')
+writedlm("data/sigma-hat.csv", Σ̂, ',')
+writedlm("data/tau-hat.csv", τ̂, ',')
 
 end
+
+
+
+# Simulate a large dataset for profiling
+# Random.seed!(1)
+# N = 500 # number of individuals
+# reps = 5 # number of observations from each individual
+# x1 = rand(Normal(0, 1), reps * N)
+# x2 = repeat(vcat(repeat(["m"], 5), repeat(["f"], 5)), 250)
+# y = 1 .+ # fixed intercept
+#     x1 + 
+#     repeat(rand(Normal(0, 1), N), inner = reps) + # random intercept, standard normal
+#     rand(Normal(0, 1), reps * N); # error, standard normal
+
+# Z = fill(1., reps * N);
+# id = repeat(1:N, inner = reps);
+# dat = DataFrame(y=y, x1=x1, x2=x2, Z=Z, id=id)
+# CSV.write("testfile.csv", dat)

@@ -1,37 +1,37 @@
 
 
-"""
-init_β(m)
-Initialize the linear regression parameters `β` and `τ=σ0^{-2}` by the least 
-squares solution.
-"""
-function init_β!(
-    m::blblmmModel{T}
-    ) where T <: BlasReal
-    # accumulate sufficient statistics X'y
-    xty = zeros(T, m.p) 
-    for i in eachindex(m.data)
-        BLAS.gemv!('T', one(T), m.data[i].X, m.data[i].y, one(T), xty)
-        # gemv!(tA, alpha, A, x, beta, y) 
-        # Update the vector y as alpha*A*x + beta*y or alpha*A'x + beta*y according to tA. 
-        # alpha and beta are scalars. Return the updated y.
-    end
-    # print("m.XtX = ", m.XtX, "\n")
-    # least square solution for β
-    ldiv!(m.β, cholesky(Symmetric(m.XtX)), xty)
-    # ldiv!(Y, A, B) -> Y
-    # Compute A \ B in-place and store the result in Y, returning the result.
+# """
+# init_β(m)
+# Initialize the linear regression parameters `β` and `τ=σ0^{-2}` by the least 
+# squares solution.
+# """
+# function init_β!(
+#     m::blblmmModel{T}
+#     ) where T <: BlasReal
+#     # accumulate sufficient statistics X'y
+#     xty = zeros(T, m.p) 
+#     for i in eachindex(m.data)
+#         BLAS.gemv!('T', one(T), m.data[i].X, m.data[i].y, one(T), xty)
+#         # gemv!(tA, alpha, A, x, beta, y) 
+#         # Update the vector y as alpha*A*x + beta*y or alpha*A'x + beta*y according to tA. 
+#         # alpha and beta are scalars. Return the updated y.
+#     end
+#     # print("m.XtX = ", m.XtX, "\n")
+#     # least square solution for β
+#     ldiv!(m.β, cholesky(Symmetric(m.XtX)), xty)
+#     # ldiv!(Y, A, B) -> Y
+#     # Compute A \ B in-place and store the result in Y, returning the result.
 
-    # accumulate residual sum of squares
-    rss = zero(T)
-    for i in eachindex(m.data)
-        update_res!(m.data[i], m.β)
-        rss += abs2(norm(m.data[i].res))
-    end
-    m.τ[1] = m.ntotal / rss # τ is the inverse of error variance
-    # we used the inverse so that the objective function is convex
-    m.β
-end
+#     # accumulate residual sum of squares
+#     rss = zero(T)
+#     for i in eachindex(m.data)
+#         update_res!(m.data[i], m.β)
+#         rss += abs2(norm(m.data[i].res))
+#     end
+#     m.τ[1] = m.ntotal / rss # τ is the inverse of error variance
+#     # we used the inverse so that the objective function is convex
+#     m.β
+# end
 
 
 """
@@ -140,6 +140,7 @@ function loglikelihood!(
     β::Vector{T},
     τ::Vector{T}, # inverse of linear regression variance
     Σ::Matrix{T},
+    ΣL::LowerTriangular{T},
     needgrad::Bool = false
     # needhess::Bool = false
     ) where T <: BlasReal
@@ -171,29 +172,41 @@ function loglikelihood!(
     # print("τ[1]=", τ[1], "\n")
     # print("obs.V=", obs.V, "\n")
 
-    # try
+    # Don't use try-catch because it's slow.
+    # try 
     #     Vchol = cholesky(Symmetric(obs.V), Val(true))
-    # catch
-    #     print("Σ=", Σ, "\n")
-    #     print("τ[1]=", τ[1], "\n")
-    #     print("obs.V=", obs.V, "\n")
+    # catch y
+    #     if isa(y, RankDeficientException)
+    #         logl = -Inf
+    #         return logl
+    #     end
     # end
-    try 
-        Vchol = cholesky(Symmetric(obs.V), Val(true))
-    catch y
-        if isa(y, RankDeficientException)
-            logl = -Inf
-            return logl
-        end
+
+    # The problem with in-place cholesky is that we can no longer use ldiv!, 
+    # and it's inconvenient to check the rank of the upper U - there may be memory allocations. 
+    # cholesky!(Symmetric(obs.V), Val(true); check = false)
+    # if rank(triu!(obs.V)) < size(obs.V, 1) # if rank deficient
+    #     logl = -Inf # set logl to -Inf and return
+    #     return logl
+    # end
+
+    # obs.Vchol = cholesky(Symmetric(obs.V), Val(true); check = false)
+    Vchol = cholesky(Symmetric(obs.V), Val(true); check = false)
+    if rank(Vchol.U) < n # if rank deficient
+        logl = -Inf # set logl to -Inf and return
+        return logl
     end
-    Vchol = cholesky(Symmetric(obs.V), Val(true))
     ldiv!(obs.storage_n1, Vchol, obs.res)
     logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
-    # Since we will use obs.V later for gradient, we cannot do in place cholesky as below.
-    # !!!!! REWRITE IT. THE FOLLOWING CODE HAS BUGS!
-    # cholesky!(Symmetric(obs.V)) # in place cholesky
-    # ldiv!(obs.storage_n1, obs.V, obs.res)
-    # logl = (-1//2) * (logdet(obs.V) + dot(obs.res, obs.storage_n1))
+
+    # Vchol = cholesky(Symmetric(obs.V), Val(true); check = false)
+    # if rank(Vchol.U) < size(obs.V, 1) # if rank deficient
+    #     logl = -Inf # set logl to -Inf and return
+    #     return logl
+    # end
+    # ldiv!(obs.storage_n1, Vchol, obs.res)
+    # logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
+    
 
     # gradient
     if needgrad
@@ -204,16 +217,15 @@ function loglikelihood!(
         obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(Vchol))) - dot(obs.storage_n1, obs.storage_n1))
         # print("obs.∇τ[1]=", obs.∇τ[1], "\n")
         # wrt L
-        L = cholesky(Symmetric(Σ)).L 
-        # !!!!!!!! this step is repeated for every data point.  we should avoid this! 
+        # L = cholesky(Symmetric(Σ)).L # !!!!!!!! this step is repeated for every data point.  we should avoid this! 
         ldiv!(obs.storage_nq, Vchol, obs.Z)
         # obs.storage_nq = Vchol \ obs.Z
         copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
-        rmul!(obs.storage_qq, L) # Calculate AB, overwriting A. B must be of special matrix type.
+        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
         obs.∇L .= - obs.storage_qq
         copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
         copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
-        rmul!(obs.storage_qq, L) # Calculate AB, overwriting A. B must be of special matrix type.
+        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
         obs.∇L .+= obs.storage_qq 
         # print("obs.∇L=", obs.∇L, "\n")
         # if counter == 50
@@ -250,14 +262,14 @@ function loglikelihood!(
     # print("m.τ=", m.τ, "\n")
     if needgrad
         for i = 1:length(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)#, needhess)
+            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, m.ΣL, needgrad)#, needhess)
             m.∇β .+= m.w[i] .* m.data[i].∇β
             m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
             m.∇L .+= m.w[i] .* m.data[i].∇L
         end
     else
         for i = 1:length(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)#, needhess)
+            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, m.ΣL, needgrad)#, needhess)
         end
     end
     
@@ -279,7 +291,7 @@ function fit!(
     )
     p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
     npar = p + 1 + (q * (q + 1)) >> 1
-    print("npar = ", npar, "\n")
+    # print("npar = ", npar, "\n")
     # since X includes a column of 1, p is the number of mean parameters
     # the cholesky factor for the qxq random effect mx has (q * (q + 1)) / 2 values,
     # the arithmetic shift right operation has the effect of division by 2^n, here n = 1
@@ -324,8 +336,9 @@ function modelpar_to_optimpar!(
     copyto!(par, m.β)
     par[p+1] = log(m.τ[1]) # take log and then exp() later to make the problem unconstrained
     # print("modelpar_to_optimpar m.β = ", m.Σ, "\n")
-    Σchol = cholesky(Symmetric(m.Σ))
-    #print("modelpar_to_optimpar Σchol = ", Σchol, "\n")
+    
+    # m.Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
+    Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
     # By using cholesky decomposition and optimizing L, 
     # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
     m.ΣL .= Σchol.L
@@ -338,6 +351,21 @@ function modelpar_to_optimpar!(
             offset += 1
         end
     end
+    
+    # old implementation
+    # Σchol = cholesky(Symmetric(m.Σ))
+    # # By using cholesky decomposition and optimizing L, 
+    # # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
+    # m.ΣL .= Σchol.L
+    # offset = p + 2
+    # for j in 1:q
+    #     par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
+    #     offset += 1
+    #     for i in j+1:q
+    #         par[offset] = m.ΣL[i, j]
+    #         offset += 1
+    #     end
+    # end
     par
     # print("modelpar_to_optimpar par = ", par, "\n")
 end
@@ -367,6 +395,9 @@ function optimpar_to_modelpar!(
         end
     end
     mul!(m.Σ, m.ΣL, transpose(m.ΣL))
+    # updates Σchol so that when we call loglikelihood!(), we are passing the updated cholesky
+    # m.Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
+    # Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
     # print("optimpar_to_modelpar m.Σ = ", m.Σ, "\n")
     m
 end
