@@ -33,6 +33,69 @@
 #     m.β
 # end
 
+"""
+Sweep operator
+Only upper triangular part is read and modified.
+"""
+function sweep!(
+    A::AbstractMatrix, 
+    k::Integer, 
+    p::Integer=size(A, 2); 
+    inv::Bool=false
+)
+    piv = 1 / A[k, k] # pivot
+    # update entries other than k-th row and column
+    @inbounds for j in 1:p
+        j == k && continue
+        akjpiv = j > k ? A[k, j] * piv : A[j, k] * piv
+        for i in 1:j
+            i == k && continue
+            aik = i > k ? A[k, i] : A[i, k]
+            A[i, j] -= aik * akjpiv
+        end
+    end
+    # update entries of k-th row and column
+    multiplier = inv ? -piv : piv
+    @inbounds for i in 1:k-1
+        A[i, k] *= multiplier
+    end
+    @inbounds for j in k+1:p
+        A[k, j] *= multiplier
+    end
+    # update (k, k)-entry
+    @inbounds A[k, k] = -piv
+    # A
+end
+
+function sweep!(
+    A::AbstractMatrix, 
+    ks::AbstractVector{<:Integer}, 
+    p::Integer=size(A, 2);
+    inv::Bool=false,
+    need_logdet::Bool=false,
+    check::Bool=false
+)
+    logdetA = 0
+    if need_logdet
+        for k in ks
+            if log(A[k, k]) == -Inf
+                if check == true
+                    error("Matrix is singular.")
+                end
+                logdetA = -Inf
+                return logdetA
+            end
+            logdetA += log(A[k, k])
+            sweep!(A, k, p, inv=inv)
+        end
+        return logdetA
+    else
+        for k in ks
+            sweep!(A, k, p, inv=inv)
+        end
+    end
+end
+
 
 """
 init_MoM(m)
@@ -172,78 +235,78 @@ function loglikelihood!(
     # print("τ[1]=", τ[1], "\n")
     # print("obs.V=", obs.V, "\n")
 
-    # Don't use try-catch because it's slow.
-    # try 
-    #     Vchol = cholesky(Symmetric(obs.V), Val(true))
-    # catch y
-    #     if isa(y, RankDeficientException)
-    #         logl = -Inf
-    #         return logl
-    #     end
-    # end
 
-    # The problem with in-place cholesky is that we can no longer use ldiv!, 
-    # and it's inconvenient to check the rank of the upper U - there may be memory allocations. 
-    # cholesky!(Symmetric(obs.V), Val(true); check = false)
-    # if rank(triu!(obs.V)) < size(obs.V, 1) # if rank deficient
-    #     logl = -Inf # set logl to -Inf and return
-    #     return logl
-    # end
-
-    # obs.Vchol = cholesky(Symmetric(obs.V), Val(true); check = false)
-    Vchol = cholesky(Symmetric(obs.V), Val(true); check = false)
-    if rank(Vchol.U) < n # if rank deficient
-        logl = -Inf # set logl to -Inf and return
-        return logl
-    end
-    ldiv!(obs.storage_n1, Vchol, obs.res)
-    logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
-
-    # Vchol = cholesky(Symmetric(obs.V), Val(true); check = false)
-    # if rank(Vchol.U) < size(obs.V, 1) # if rank deficient
+    # # Using the cholesky appraoch
+    # Vchol = cholesky!(Symmetric(obs.V), Val(true); check = false)
+    # # There is no allocation bcz Vchol is pointing to obs.V
+    # # if rank(Vchol.U) < n # if rank deficient
+    # # print("rank(Vchol) = ", rank(Vchol))
+    # if rank(Vchol) < n # Since Vchol is of Cholesky type, rank(Vchol) doesn't call SVD
     #     logl = -Inf # set logl to -Inf and return
     #     return logl
     # end
     # ldiv!(obs.storage_n1, Vchol, obs.res)
     # logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
-    
+    # # gradient
+    # if needgrad
+    #     # wrt β
+    #     copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
+    #     # wrt τ
+    #     # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(obs.V))) - transpose(obs.res) * inv(obs.V) * inv(obs.V) * obs.res)
+    #     ldiv!(obs.storage_nn, Vchol, obs.I_n)
+    #     obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.storage_nn) - dot(obs.storage_n1, obs.storage_n1))
+    #     # print("obs.∇τ[1]=", obs.∇τ[1], "\n")
+    #     # wrt L
+    #     ldiv!(obs.storage_nq, Vchol, obs.Z)
+    #     copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
+    #     # BLAS.gemm!('T', 'N', 1., obs.Z, obs.storage_nq, 1., obs.storage_qq)
+    #     rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+    #     obs.∇L .= - obs.storage_qq
+    #     copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
+    #     # ??? reshape may cause unnecessary allocation
+    #     # BLAS.gemm!('T', 'N', 1., reshape(obs.res, (n, 1)), obs.storage_nq, 1., obs.storage_1q)
+    #     copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
+    #     # BLAS.gemm!('T', 'N', 1., obs.storage_1q, obs.storage_1q, 1., obs.storage_qq)
+    #     rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+    #     obs.∇L .+= obs.storage_qq 
+    # end
 
-    # gradient
+
+    # # Using the sweep operator
+    logdet_V = sweep!(obs.V, 1:size(obs.V, 1); need_logdet = true, check = false)
+    if logdet_V == -Inf
+        logl = -Inf # set logl to -Inf and return
+        return logl
+    end
+    LinearAlgebra.copytri!(obs.V, 'U') # Copy the uppertri to lowertri because we only swept the upper tri
+    obs.V .= -obs.V
+    mul!(obs.storage_n1, obs.V, obs.res)
+    logl = (-1//2) * (logdet_V + dot(obs.res, obs.storage_n1))
+    # print("logl = ", logl, "\n")
     if needgrad
         # wrt β
+        # BLAS.gemm!('T', 'N', 1., obs.X, obs.storage_n1, 1., obs.∇β)
         copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
         # wrt τ
         # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(obs.V))) - transpose(obs.res) * inv(obs.V) * inv(obs.V) * obs.res)
-        obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(Vchol))) - dot(obs.storage_n1, obs.storage_n1))
+        obs.∇τ[1] = (1/(2 * τ[1]^2)) * (LinearAlgebra.tr(obs.V) - dot(obs.storage_n1, obs.storage_n1))
         # print("obs.∇τ[1]=", obs.∇τ[1], "\n")
         # wrt L
-        # L = cholesky(Symmetric(Σ)).L # !!!!!!!! this step is repeated for every data point.  we should avoid this! 
-        ldiv!(obs.storage_nq, Vchol, obs.Z)
-        # obs.storage_nq = Vchol \ obs.Z
+        mul!(obs.storage_nq, obs.V, obs.Z) # 
         copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
+        # BLAS.gemm!('T', 'N', 1., obs.Z, obs.storage_nq, 1., obs.storage_qq)
         rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
         obs.∇L .= - obs.storage_qq
         copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
+        # ??? why do we need reshape here?
+        # BLAS.gemm!('T', 'N', 1., reshape(obs.res, (n, 1)), obs.storage_nq, 1., obs.storage_1q)
         copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
+        # BLAS.gemm!('T', 'N', 1., obs.storage_1q, obs.storage_1q, 1., obs.storage_qq)
         rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
         obs.∇L .+= obs.storage_qq 
-        # print("obs.∇L=", obs.∇L, "\n")
-        # if counter == 50
-        #     print("obs.∇β=", obs.∇β, "\n")
-        #     print("obs.∇τ[1]=", obs.∇τ[1], "\n")
-        #     print("obs.∇L=", obs.∇L, "\n")
-        #     print("(1/(2 * τ[1]^2)) = ", (1/(2 * τ[1]^2)), "\n")
-        #     print("obs.n=", n, "\n")
-        #     print("sum(diag(inv(Vchol))) = ", sum(diag(inv(Vchol))), "\n")
-        #     print("dot(obs.storage_n1, obs.storage_n1) = ", dot(obs.storage_n1, obs.storage_n1), "\n")
-        # end
     end
-    # ??? Why can't we use autodiff???
 
-    # # Hessian: TODO
-    # if needhess; end;
-    
-    # output
+    # Why can't we use autodiff???
     logl
 end
 
@@ -252,7 +315,7 @@ function loglikelihood!(
     needgrad::Bool = false,
     needhess::Bool = false
     ) where T <: BlasReal
-    logl = 0
+    logl = zero(T)
     if needgrad
         fill!(m.∇β, 0)
         fill!(m.∇τ, 0)
@@ -337,7 +400,7 @@ function modelpar_to_optimpar!(
     par[p+1] = log(m.τ[1]) # take log and then exp() later to make the problem unconstrained
     # print("modelpar_to_optimpar m.β = ", m.Σ, "\n")
     
-    # m.Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
+    # Since modelpar_to_optimpar is only called once, it's ok to allocate Σchol
     Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
     # By using cholesky decomposition and optimizing L, 
     # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
@@ -351,21 +414,6 @@ function modelpar_to_optimpar!(
             offset += 1
         end
     end
-    
-    # old implementation
-    # Σchol = cholesky(Symmetric(m.Σ))
-    # # By using cholesky decomposition and optimizing L, 
-    # # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
-    # m.ΣL .= Σchol.L
-    # offset = p + 2
-    # for j in 1:q
-    #     par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
-    #     offset += 1
-    #     for i in j+1:q
-    #         par[offset] = m.ΣL[i, j]
-    #         offset += 1
-    #     end
-    # end
     par
     # print("modelpar_to_optimpar par = ", par, "\n")
 end

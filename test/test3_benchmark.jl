@@ -6,10 +6,7 @@ using DelimitedFiles, Random, CSV
 
 Random.seed!(123)
 
-# 
 
-
-gcm = GaussianCopulaVCModel(gcs)
 
 @info "Initial point:"
 init_β!(gcm)

@@ -16,6 +16,7 @@ using DataFrames
 using CSV
 using InteractiveUtils
 using DelimitedFiles
+using SparseArrays
 
 using LinearAlgebra: BlasReal, copytri!
 
@@ -24,10 +25,8 @@ using LinearAlgebra: BlasReal, copytri!
 @reexport using MixedModels
 
 export blblmmObs, blblmmModel
-export fit!, fitted, init_β!, loglikelihood!, standardize_res!
-export update_res!, update_Σ!, update_w!
-export print_matrices
-export blb_one_subset, blb_full_data, testlmm
+export fit!, fitted, init_MoM!, loglikelihood!, update_res!, update_w!, sweep!
+export blb_one_subset, blb_full_data
 
 """
 blblmmObs
@@ -56,8 +55,10 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     storage_qn::Matrix{T}
     storage_nq::Matrix{T}
     storage_qq::Matrix{T}
+    storage_nn::Matrix{T}
+    I_n::SparseArrays.SparseMatrixCSC{T, Int64}
     V::Matrix{T}
-    Vchol::CholeskyPivoted{T}
+    #Vchol::CholeskyPivoted{T}
 end
 #storage_q1::Vector{T}
 #storage_q2::Vector{T}
@@ -86,8 +87,10 @@ function blblmmObs(
     storage_qn = Matrix{T}(undef, q, n)
     storage_nq = Matrix{T}(undef, n, q)
     storage_qq = Matrix{T}(undef, q, q)
+    storage_nn = Matrix{T}(undef, n, n)
+    I_n = sparse(LinearAlgebra.I, n, n)
     V = Matrix{T}(undef, n, n)
-    Vchol = cholesky(V, Val(true); check = false)
+    # Vchol = cholesky(V, Val(true); check = false)
     blblmmObs{T}(
         y, X, Z, 
         ∇β, ∇τ, ∇L, 
@@ -95,7 +98,8 @@ function blblmmObs(
         res, xtx, ztz, #xtz,
         storage_n1, storage_1q, 
         storage_qn, storage_nq, 
-        storage_qq, V, Vchol)
+        storage_qq, storage_nn, 
+        I_n, V)
 end
 # constructor
 #storage_q1 = Vector{T}(undef, q)
@@ -120,9 +124,9 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     τ::Vector{T}    # inverse of linear regression variance parameter 
     # we used the inverse so that the objective function is convex
     Σ::Matrix{T}    # q-by-q (psd) matrix
-    Σchol::CholeskyPivoted{T}
+    # Σchol::CholeskyPivoted{T}
     # working arrays
-    ΣL::LowerTriangular{T}
+    ΣL::LowerTriangular{T, Matrix{T}}
     ∇β::Vector{T}   # gradient from all observations
     ∇τ::Vector{T}
     ∇L::Matrix{T}
@@ -145,8 +149,8 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     β   = Vector{T}(undef, p)
     τ   = Vector{T}(undef, 1)
     Σ   = Matrix{T}(undef, q, q)
-    Σchol = cholesky(Σ, Val(true); check = false)
-    ΣL  = LowerTriangular(Σ)
+    # Σchol = cholesky(Σ, Val(true); check = false)
+    ΣL  = LowerTriangular(Matrix{T}(undef, q, q))
     ∇β  = Vector{T}(undef, p)
     ∇τ  = Vector{T}(undef, 1)
     ∇L  = Matrix{T}(undef, q, q)
@@ -163,7 +167,7 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     storage_nq = Matrix{T}(undef, n, q)
     
     blblmmModel{T}(obsvec, w, ntotal, p, q, 
-        β, τ, Σ, Σchol, ΣL,
+        β, τ, Σ, ΣL, 
         ∇β, ∇τ, ∇L, Hβ, Hτ, HΣ, 
         XtX, storage_qq, storage_nq)
 end
