@@ -33,68 +33,163 @@
 #     m.β
 # end
 
+# """
+# Sweep operator
+# Only upper triangular part is read and modified.
+# """
+# function sweep!(
+#     A::AbstractMatrix, 
+#     k::Integer, 
+#     p::Integer=size(A, 2); 
+#     inv::Bool=false
+# )
+#     piv = 1 / A[k, k] # pivot
+#     # update entries other than k-th row and column
+#     @inbounds for j in 1:p
+#         j == k && continue
+#         akjpiv = j > k ? A[k, j] * piv : A[j, k] * piv
+#         for i in 1:j
+#             i == k && continue
+#             aik = i > k ? A[k, i] : A[i, k]
+#             A[i, j] -= aik * akjpiv
+#         end
+#     end
+#     # update entries of k-th row and column
+#     multiplier = inv ? -piv : piv
+#     @inbounds for i in 1:k-1
+#         A[i, k] *= multiplier
+#     end
+#     @inbounds for j in k+1:p
+#         A[k, j] *= multiplier
+#     end
+#     # update (k, k)-entry
+#     @inbounds A[k, k] = -piv
+#     # A
+# end
+
+# function sweep!(
+#     A::AbstractMatrix, 
+#     ks::AbstractVector{<:Integer}, 
+#     p::Integer=size(A, 2);
+#     inv::Bool=false,
+#     need_logdet::Bool=false,
+#     check::Bool=false
+# )
+#     logdetA = 0
+#     if need_logdet
+#         for k in ks
+#             if log(A[k, k]) == -Inf
+#                 if check == true
+#                     error("Matrix is singular.")
+#                 end
+#                 logdetA = -Inf
+#                 return logdetA
+#             end
+#             logdetA += log(A[k, k])
+#             sweep!(A, k, p, inv=inv)
+#         end
+#         return logdetA
+#     else
+#         for k in ks
+#             sweep!(A, k, p, inv=inv)
+#         end
+#     end
+# end
+
+
+const AMat = AbstractMatrix
+const AVec = AbstractVector
+
+
 """
-Sweep operator
-Only upper triangular part is read and modified.
+    sweep!(A, k ; inv=false)
+    sweep!(A, ks; inv=false)
+Perform the sweep operation (or inverse sweep if `inv=true`) on matrix `A` on element `k`
+(or each element in `ks`).  Only the upper triangle is read/swept.
+# Example:
+    x = randn(100, 10)
+    xtx = x'x
+    sweep!(xtx, 1)
+    sweep!(xtx, 1, true)
 """
-function sweep!(
-    A::AbstractMatrix, 
-    k::Integer, 
-    p::Integer=size(A, 2); 
-    inv::Bool=false
-)
-    piv = 1 / A[k, k] # pivot
-    # update entries other than k-th row and column
-    @inbounds for j in 1:p
-        j == k && continue
-        akjpiv = j > k ? A[k, j] * piv : A[j, k] * piv
-        for i in 1:j
-            i == k && continue
-            aik = i > k ? A[k, i] : A[i, k]
-            A[i, j] -= aik * akjpiv
-        end
-    end
-    # update entries of k-th row and column
-    multiplier = inv ? -piv : piv
-    @inbounds for i in 1:k-1
-        A[i, k] *= multiplier
-    end
-    @inbounds for j in k+1:p
-        A[k, j] *= multiplier
-    end
-    # update (k, k)-entry
-    @inbounds A[k, k] = -piv
-    # A
+function sweep!(A::AMat, k::Integer, inv::Bool = false)
+    sweep_with_buffer!(Vector{eltype(A)}(undef, size(A, 2)), A, k, inv)
 end
 
-function sweep!(
-    A::AbstractMatrix, 
-    ks::AbstractVector{<:Integer}, 
-    p::Integer=size(A, 2);
-    inv::Bool=false,
-    need_logdet::Bool=false,
-    check::Bool=false
-)
+function sweep_with_buffer!(akk::AVec{T}, A::AMat{T}, k::Integer, inv::Bool = false) where
+        {T<:BlasFloat}
+    # ensure @inbounds is safe
+    p = checksquare(A)
+    p == length(akk) || throw(DimensionError("incorrect buffer size"))
+    @inbounds d = one(T) / A[k, k]  # pivot
+    # get column A[:, k] (hack because only upper triangle is available)
+    for j in 1:k
+        @inbounds akk[j] = A[j, k]
+    end
+    for j in (k+1):p
+        @inbounds akk[j] = A[k, j]
+    end
+    BLAS.syrk!('U', 'N', -d, akk, one(T), A)  # everything not in col/row k
+    rmul!(akk, d * (-one(T)) ^ inv)
+    for i in 1:(k-1)  # col k
+        @inbounds A[i, k] = akk[i]
+    end
+    for j in (k+1):p  # row k
+        @inbounds A[k, j] = akk[j]
+    end
+    @inbounds A[k, k] = -d  # pivot element
+    A
+end
+
+function sweep!(A::AMat{T}, ks::AVec{I}, inv::Bool = false; need_logdet::Bool=false, check::Bool=false) where {T<:BlasFloat, I<:Integer}
+    akk = zeros(T, size(A, 1))
+    # for k in ks
+    #     sweep_with_buffer!(akk, A, k, inv)
+    # end
     logdetA = 0
     if need_logdet
         for k in ks
-            if log(A[k, k]) == -Inf
+            # print("A[k, k] = ", A[k, k], "\n")
+            if A[k, k] < 0
+                logdetA = -Inf 
+                return logdetA
+            elseif log(A[k, k]) == -Inf
                 if check == true
                     error("Matrix is singular.")
                 end
-                logdetA = -Inf
+                logdetA = -Inf 
                 return logdetA
             end
             logdetA += log(A[k, k])
-            sweep!(A, k, p, inv=inv)
+            sweep_with_buffer!(akk, A, k, inv)
         end
         return logdetA
     else
         for k in ks
-            sweep!(A, k, p, inv=inv)
+            sweep_with_buffer!(akk, A, k, inv)
         end
     end
+    A
 end
+
+function sweep_with_buffer!(akk::AVec{T}, A::AMat{T}, ks::AVec{I}, inv::Bool = false) where
+        {T<:BlasFloat, I<:Integer}
+    for k in ks
+        sweep_with_buffer!(akk, A, k, inv)
+    end
+    A
+end
+
+
+
+
+
+
+
+
+
+
+
 
 
 """
@@ -236,75 +331,79 @@ function loglikelihood!(
     # print("obs.V=", obs.V, "\n")
 
 
-    # # Using the cholesky appraoch
-    # Vchol = cholesky!(Symmetric(obs.V), Val(true); check = false)
-    # # There is no allocation bcz Vchol is pointing to obs.V
-    # # if rank(Vchol.U) < n # if rank deficient
-    # # print("rank(Vchol) = ", rank(Vchol))
-    # if rank(Vchol) < n # Since Vchol is of Cholesky type, rank(Vchol) doesn't call SVD
+    # Using the cholesky appraoch
+    Vchol = cholesky!(Symmetric(obs.V), Val(true); check = false)
+    # There is no allocation bcz Vchol is pointing to obs.V
+    # if rank(Vchol.U) < n # if rank deficient
+    # print("rank(Vchol) = ", rank(Vchol))
+    if rank(Vchol) < n # Since Vchol is of Cholesky type, rank(Vchol) doesn't call SVD
+        logl = -Inf # set logl to -Inf and return
+        return logl
+    end
+    ldiv!(obs.storage_n1, Vchol, obs.res)
+    logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
+    # gradient
+    if needgrad
+        # wrt β
+        copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
+        
+        # wrt L
+        ldiv!(obs.storage_nq, Vchol, obs.Z)
+        copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
+        # BLAS.gemm!('T', 'N', 1., obs.Z, obs.storage_nq, 1., obs.storage_qq)
+        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+        obs.∇L .= - obs.storage_qq
+        copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
+        # ??? reshape may cause unnecessary allocation
+        # BLAS.gemm!('T', 'N', 1., reshape(obs.res, (n, 1)), obs.storage_nq, 1., obs.storage_1q)
+        copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
+        # BLAS.gemm!('T', 'N', 1., obs.storage_1q, obs.storage_1q, 1., obs.storage_qq)
+        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+        obs.∇L .+= obs.storage_qq 
+
+        # wrt τ
+        # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(obs.V))) - transpose(obs.res) * inv(obs.V) * inv(obs.V) * obs.res)
+        # Since Vchol and V are no longer needed, we can calculate in-place inverse of obs.V
+        LAPACK.potri!('U', obs.V)
+        obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.V) - dot(obs.storage_n1, obs.storage_n1))
+        # ldiv!(obs.storage_nn, Vchol, obs.I_n)
+        # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.storage_nn) - dot(obs.storage_n1, obs.storage_n1))
+    end
+
+
+    # # # Using the sweep operator
+    # logdet_V = sweep!(obs.V, 1:size(obs.V, 1); need_logdet = true, check = false)
+    # if logdet_V == -Inf
     #     logl = -Inf # set logl to -Inf and return
     #     return logl
     # end
-    # ldiv!(obs.storage_n1, Vchol, obs.res)
-    # logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
-    # # gradient
+    # LinearAlgebra.copytri!(obs.V, 'U') # Copy the uppertri to lowertri because we only swept the upper tri
+    # lmul!(-1, obs.V)
+    # mul!(obs.storage_n1, obs.V, obs.res)
+    # logl = (-1//2) * (logdet_V + dot(obs.res, obs.storage_n1))
+    # # print("logl = ", logl, "\n")
     # if needgrad
     #     # wrt β
+    #     # BLAS.gemm!('T', 'N', 1., obs.X, obs.storage_n1, 1., obs.∇β)
     #     copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
     #     # wrt τ
     #     # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(obs.V))) - transpose(obs.res) * inv(obs.V) * inv(obs.V) * obs.res)
-    #     ldiv!(obs.storage_nn, Vchol, obs.I_n)
-    #     obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.storage_nn) - dot(obs.storage_n1, obs.storage_n1))
+    #     obs.∇τ[1] = (1/(2 * τ[1]^2)) * (LinearAlgebra.tr(obs.V) - dot(obs.storage_n1, obs.storage_n1))
     #     # print("obs.∇τ[1]=", obs.∇τ[1], "\n")
     #     # wrt L
-    #     ldiv!(obs.storage_nq, Vchol, obs.Z)
+    #     mul!(obs.storage_nq, obs.V, obs.Z) # 
     #     copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
     #     # BLAS.gemm!('T', 'N', 1., obs.Z, obs.storage_nq, 1., obs.storage_qq)
     #     rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
     #     obs.∇L .= - obs.storage_qq
     #     copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
-    #     # ??? reshape may cause unnecessary allocation
+    #     # ??? why do we need reshape here?
     #     # BLAS.gemm!('T', 'N', 1., reshape(obs.res, (n, 1)), obs.storage_nq, 1., obs.storage_1q)
     #     copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
     #     # BLAS.gemm!('T', 'N', 1., obs.storage_1q, obs.storage_1q, 1., obs.storage_qq)
     #     rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
     #     obs.∇L .+= obs.storage_qq 
     # end
-
-
-    # # Using the sweep operator
-    logdet_V = sweep!(obs.V, 1:size(obs.V, 1); need_logdet = true, check = false)
-    if logdet_V == -Inf
-        logl = -Inf # set logl to -Inf and return
-        return logl
-    end
-    LinearAlgebra.copytri!(obs.V, 'U') # Copy the uppertri to lowertri because we only swept the upper tri
-    obs.V .= -obs.V
-    mul!(obs.storage_n1, obs.V, obs.res)
-    logl = (-1//2) * (logdet_V + dot(obs.res, obs.storage_n1))
-    # print("logl = ", logl, "\n")
-    if needgrad
-        # wrt β
-        # BLAS.gemm!('T', 'N', 1., obs.X, obs.storage_n1, 1., obs.∇β)
-        copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
-        # wrt τ
-        # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (sum(diag(inv(obs.V))) - transpose(obs.res) * inv(obs.V) * inv(obs.V) * obs.res)
-        obs.∇τ[1] = (1/(2 * τ[1]^2)) * (LinearAlgebra.tr(obs.V) - dot(obs.storage_n1, obs.storage_n1))
-        # print("obs.∇τ[1]=", obs.∇τ[1], "\n")
-        # wrt L
-        mul!(obs.storage_nq, obs.V, obs.Z) # 
-        copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
-        # BLAS.gemm!('T', 'N', 1., obs.Z, obs.storage_nq, 1., obs.storage_qq)
-        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        obs.∇L .= - obs.storage_qq
-        copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
-        # ??? why do we need reshape here?
-        # BLAS.gemm!('T', 'N', 1., reshape(obs.res, (n, 1)), obs.storage_nq, 1., obs.storage_1q)
-        copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
-        # BLAS.gemm!('T', 'N', 1., obs.storage_1q, obs.storage_1q, 1., obs.storage_qq)
-        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        obs.∇L .+= obs.storage_qq 
-    end
 
     # Why can't we use autodiff???
     logl

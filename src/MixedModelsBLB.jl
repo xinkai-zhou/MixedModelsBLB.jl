@@ -19,6 +19,7 @@ using DelimitedFiles
 using SparseArrays
 
 using LinearAlgebra: BlasReal, copytri!
+import LinearAlgebra: BlasFloat, checksquare
 
 @reexport using Ipopt
 @reexport using NLopt
