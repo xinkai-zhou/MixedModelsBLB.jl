@@ -338,6 +338,8 @@ function blb_full_data(
     # Initialize an array to store the unique IDs for the subset
     blb_id_unique = fill(0, subset_size)
 
+    timer = zeros(n_subsets+1)
+    timer[1] = time_ns()
     Threads.@threads for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
 
@@ -399,8 +401,9 @@ function blb_full_data(
         # isnothing(re_name) ? Z = intercept : Z = hcat(intercept, JuliaDB.select(ftable, map(Symbol, re_name))[subset_indices, ])
         ####
         # j += 1
+        timer[j] = time_ns()
     end
-    return β̂, Σ̂, τ̂
+    return β̂, Σ̂, τ̂, timer
 end
 
 

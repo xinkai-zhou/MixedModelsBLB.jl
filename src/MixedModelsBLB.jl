@@ -56,8 +56,8 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     storage_qn::Matrix{T}
     storage_nq::Matrix{T}
     storage_qq::Matrix{T}
-    storage_nn::Matrix{T}
-    I_n::SparseArrays.SparseMatrixCSC{T, Int64}
+    # storage_nn::Matrix{T}
+    # I_n::SparseArrays.SparseMatrixCSC{T, Int64}
     V::Matrix{T}
     #Vchol::CholeskyPivoted{T}
 end
@@ -88,8 +88,8 @@ function blblmmObs(
     storage_qn = Matrix{T}(undef, q, n)
     storage_nq = Matrix{T}(undef, n, q)
     storage_qq = Matrix{T}(undef, q, q)
-    storage_nn = Matrix{T}(undef, n, n)
-    I_n = sparse(LinearAlgebra.I, n, n)
+    # storage_nn = Matrix{T}(undef, n, n)
+    # I_n = sparse(LinearAlgebra.I, n, n)
     V = Matrix{T}(undef, n, n)
     # Vchol = cholesky(V, Val(true); check = false)
     blblmmObs{T}(
@@ -99,8 +99,7 @@ function blblmmObs(
         res, xtx, ztz, #xtz,
         storage_n1, storage_1q, 
         storage_qn, storage_nq, 
-        storage_qq, storage_nn, 
-        I_n, V)
+        storage_qq, V)
 end
 # constructor
 #storage_q1 = Vector{T}(undef, q)
