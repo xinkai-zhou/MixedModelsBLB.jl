@@ -1,5 +1,10 @@
-.DS_Store
 
+# archived code
+src/code_archive.jl
+
+# OS files and memory profiling results
+.DS_Store
+*.mem
 
 test/*.csv
 *.csv

@@ -45,6 +45,7 @@ dat = DataFrame(y=y, x1=x1, x2=x2, Z=Z, id=id)
 CSV.write("exp1-testfile.csv", dat)
 
 # 1.2 MixedModelsBLB 
+
 β̂_blb, Σ̂_blb, τ̂_blb, timer_blb = blb_full_data(
     "data/testfile.csv", 
     @formula(y ~ 1 + x1 + x2 + (1 | id)); 

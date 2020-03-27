@@ -51,8 +51,8 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
     # xtz::Matrix{T}  # Xi'Zi (p-by-q)
-    storage_n1::Matrix{T}
-    storage_1q::Matrix{T}
+    storage_n1::Vector{T}
+    storage_1q::Vector{T}
     storage_qn::Matrix{T}
     storage_nq::Matrix{T}
     storage_qq::Matrix{T}
@@ -83,11 +83,11 @@ function blblmmObs(
     xtx = transpose(X) * X
     ztz = transpose(Z) * Z
     # xtz = transpose(X) * Z
-    storage_n1 = Matrix{T}(undef, n, 1)
-    storage_1q = Matrix{T}(undef, 1, q)
+    storage_n1 = Vector{T}(undef, n)
+    storage_1q = Vector{T}(undef, q)
     storage_qn = Matrix{T}(undef, q, n)
     storage_nq = Matrix{T}(undef, n, q)
-    storage_qq = Matrix{T}(undef, q, q)
+    storage_qq = zeros(T, q, q)
     # storage_nn = Matrix{T}(undef, n, n)
     # I_n = sparse(LinearAlgebra.I, n, n)
     V = Matrix{T}(undef, n, n)

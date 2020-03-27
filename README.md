@@ -1,3 +1,3 @@
 # MixedModelsBLB.jl
 
-Bag of Little Bootstraps (BLB) for Mixed Models
+Bag of Little Bootstraps (BLB) for Linear Mixed Models

@@ -45,6 +45,9 @@ using MixedModelsBLB
   #blb_full_data#6(::Int64, ::Int64, ::Int64, ::Any, ::Bool, ::Any, ::Array{T<:Union{Float32, Float64},1}, ::Array{T<:Union{Float32, Float64},2}, ::Array{T<:Union{Float32, Float64},2}, ::Array{Int64,1}, ::Int64) where T<:Union{Float32, Float64}
 
 
+println()
+@info "Test blb_full_data(file, f)"
+
 # This part was run in the terminal. The output "testfile.csv" was moved to the "test" folder
 # Random.seed!(1)
 # N = 500 # number of individuals
@@ -61,29 +64,6 @@ using MixedModelsBLB
 # dat = DataFrame(y=y, x1=x1, x2=x2, Z=Z, id=id)
 # CSV.write("testfile.csv", dat)
 
-# using CSV, DataFrames, MixedModels, JuliaDB, StatsModels
-# f = @formula(y ~ 1 + x1 + x2 + (1 | id))
-# lhs_name = [string(x) for x in StatsModels.termvars(f.lhs)]
-# rhs_name = [string(x) for x in StatsModels.termvars(f.rhs)]
-# # d = CSV.read("testfile.csv"; header= true)
-# # df = DataFrame(d)
-# ftable = JuliaDB.loadtable(
-#     "testfile.csv", 
-#     datacols = filter(x -> x != nothing, vcat(lhs_name, rhs_name))
-# )
-# subset_indices = [1:1500;]
-# df = DataFrame(ftable[subset_indices, ])
-# categorical!(df, Symbol("id"))
-# lmm = LinearMixedModel(f, df)
-# function test(lmm::LinearMixedModel)
-#     fit!(lmm)
-# end
-# propertynames(lmm)
-# fit!(lmm)
-# propertynames(lmm)
-
-println()
-@info "Test blb_full_data(file, f)"
 
 Random.seed!(1234)
 
@@ -108,30 +88,9 @@ Random.seed!(1234)
     verbose = true
 )
 
+@info "Confidence intervals:"
+# @show 
 
-
-
-# β̂, Σ̂, τ̂ = blb_full_data(
-#     "testfile.csv", 
-#     @formula(y ~ 1 + x1 + x2 + (1 | id)); 
-#     id_name = "id", 
-#     cat_names = ["x2"], 
-#     subset_size = 300,
-#     n_subsets = 2, 
-#     n_boots = 5,
-#     MoM_init = false,
-#     solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000)
-# )
-
-
-# testlmm("testfile.csv", @formula(y ~ 1 + x1 + x2 + (1 | id)), "id")
-# pkgs = Pkg.installed()
-# pkgs["MixedModels"]
-# testlmm(
-#     "sleepstudy.csv", 
-#     @formula(Reaction ~ 1 + Days + (Days | Subject)), 
-#     "Subject"
-# ) 
 writedlm("data/beta-hat.csv", β̂, ',')
 writedlm("data/sigma-hat.csv", Σ̂, ',')
 writedlm("data/tau-hat.csv", τ̂, ',')
