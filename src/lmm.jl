@@ -82,27 +82,31 @@ function loglikelihood!(
         BLAS.gemv!('T', 1., obs.X, obs.storage_n1, false, obs.∇β)
 
         # wrt L
+        # new code 
         ldiv!(obs.storage_nq, Vchol, obs.Z)
-        # Original code ----
-        # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
-        # # BLAS.gemm!('T', 'N', obs.Z, obs.storage_nq, false, obs.storage_qq)
-        # rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        # obs.∇L .= - obs.storage_qq
-        # New code ----
-        BLAS.gemm!('T', 'N', 1., obs.Z, obs.storage_nq, false, obs.∇L)
-        rmul!(obs.∇L, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        lmul!(-1., obs.∇L)
-        
-        # copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
+        BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, false, obs.∇L)
         BLAS.gemv!('T', 1., obs.storage_nq, obs.res, false, obs.storage_1q)
+        BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.∇L)
+        rmul!(obs.∇L, ΣL)
 
-        # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
-        # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', reshape(obs.storage_1q, (1, q)), reshape(obs.storage_1q, (1, q))))
-        # Since we initialized storage_qq as 0, the following should work
-        obs.storage_qq .= 0.
-        BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.storage_qq)
-        rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        obs.∇L .+= obs.storage_qq 
+        # ldiv!(obs.storage_nq, Vchol, obs.Z)
+        # # Original code ----
+        # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
+        # # # BLAS.gemm!('T', 'N', obs.Z, obs.storage_nq, false, obs.storage_qq)
+        # # rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+        # # obs.∇L .= - obs.storage_qq
+        # # New code ----
+        # BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, false, obs.∇L)
+        # rmul!(obs.∇L, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+        # # copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
+        # BLAS.gemv!('T', 1., obs.storage_nq, obs.res, false, obs.storage_1q)
+        # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
+        # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', reshape(obs.storage_1q, (1, q)), reshape(obs.storage_1q, (1, q))))
+        # # Since we initialized storage_qq as 0, the following should work
+        # obs.storage_qq .= 0.
+        # BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.storage_qq)
+        # rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
+        # obs.∇L .+= obs.storage_qq 
 
         # wrt τ
         # Since Vchol and V are no longer needed, we can calculate in-place inverse of obs.V
@@ -132,10 +136,11 @@ function loglikelihood!(
     if needgrad
         for i = 1:length(m.data)
             logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, m.ΣL, needgrad)#, needhess)
-            m.∇β .+= m.w[i] .* m.data[i].∇β
+            # m.∇β .+= m.w[i] .* m.data[i].∇β
+            BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
             m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
-            m.∇L .+= m.w[i] .* m.data[i].∇L
-
+            # m.∇L .+= m.w[i] .* m.data[i].∇L
+            BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
         end
     else
         for i = 1:length(m.data)

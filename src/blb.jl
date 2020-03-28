@@ -44,7 +44,7 @@ function blb_one_subset(
     # writedlm("subset-Z.csv", Z, ',')
     # writedlm("subset-id.csv", id, ',')
 
-    b, p, q = length(unique(id)), size(X, 2), size(Z, 2)
+    b, p, q = length(Set(id)), size(X, 2), size(Z, 2)
     
     # Initialize arrays for storing the results
     β̂ = Matrix{Float64}(undef, n_boots, p)
@@ -376,7 +376,7 @@ function blb_full_data(
         # Currently I do this by converting the table to DataFrame.
         # In later releases of MixedModels.jl, they will no longer require "id"
         # to be cateogorical. I will change the script then.
-        df = DataFrame(ftable[subset_indices, ])
+        @views df = DataFrame(ftable[subset_indices, ])
         categorical!(df, Symbol("id"))
         lmm = LinearMixedModel(f, df)
 

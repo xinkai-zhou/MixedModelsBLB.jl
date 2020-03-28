@@ -8,7 +8,7 @@ using Profile, InteractiveUtils, BenchmarkTools, Test
 
 @info "generate data"
 Random.seed!(1)
-N = 1 # number of individuals
+N = 10 # number of individuals
 reps = 2000 # number of observations from each individual
 x1 = rand(Normal(0, 1), reps * N)
 x2 = rand(Normal(0, 3), reps * N)
