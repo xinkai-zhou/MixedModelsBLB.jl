@@ -33,14 +33,26 @@ function update_w!(
     copyto!(m.w, w)
 end
 
-
+# Extract the variance-covariance matrix of variance components
+function extract_Σ!(Σ, lmm::LinearMixedModel)
+    σρ = MixedModels.VarCorr(lmm).σρ
+    q = length(σρ[1][1])
+    for i in 1:q
+        Σ[i, i] = (σρ[1][1][i])^2
+        for j in (i+1):q
+            Σ[i, j] = σρ[1][2][(j-1)] * σρ[1][1][i] * σρ[1][1][j]
+        end
+    end
+    LinearAlgebra.copytri!(Σ, 'U')
+    return(Σ)
+end
 
 function loglikelihood!(
     obs::blblmmObs{T},
     β::Vector{T},
     τ::Vector{T}, # inverse of linear regression variance
     Σ::Matrix{T},
-    ΣL::LowerTriangular{T},
+    # ΣL::LowerTriangular{T},
     needgrad::Bool = false
     ) where T <: BlasReal
 
@@ -56,8 +68,10 @@ function loglikelihood!(
     mul!(obs.storage_qn, Σ, transpose(obs.Z))
     mul!(obs.V, obs.Z, obs.storage_qn)
     # V = obs.Z * Σ * obs.Z' + (1 / τ) * I
+    # calculate once 
+    τ_inv = (1 / τ[1])
     for i in 1:n
-        obs.V[i, i] += (1 / τ[1]) # instead of τ
+        obs.V[i, i] += τ_inv 
     end
     
     # print("Σ=", Σ, "\n")
@@ -77,6 +91,10 @@ function loglikelihood!(
     logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
     # gradient
     if needgrad
+        # print("ΣL = ", ΣL, "\n")
+        # print("LL' = ", ΣL * ΣL', "\n")
+        # print("Σ = ", Σ, "\n")
+        
         # wrt β
         # copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
         BLAS.gemv!('T', 1., obs.X, obs.storage_n1, false, obs.∇β)
@@ -84,11 +102,15 @@ function loglikelihood!(
         # wrt L
         # new code 
         ldiv!(obs.storage_nq, Vchol, obs.Z)
-        BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, false, obs.∇L)
-        BLAS.gemv!('T', 1., obs.storage_nq, obs.res, false, obs.storage_1q)
+        BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, 0., obs.∇L)
+        BLAS.gemv!('T', 1., obs.storage_nq, obs.res, 0., obs.storage_1q)
         BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.∇L)
-        rmul!(obs.∇L, ΣL)
-
+        # !!! use trmm for triangular matrix multiplication
+        # Since ΣL is the same for all clusters, instead of doing rmul! repeatedly, 
+        # we will do it once in the aggregate step.
+        # rmul!(obs.∇L, ΣL)
+        
+        
         # ldiv!(obs.storage_nq, Vchol, obs.Z)
         # # Original code ----
         # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
@@ -118,6 +140,7 @@ function loglikelihood!(
 
     # Why can't we use autodiff???
     logl
+    
 end
 
 function loglikelihood!(
@@ -135,16 +158,18 @@ function loglikelihood!(
     # print("m.τ=", m.τ, "\n")
     if needgrad
         for i = 1:length(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, m.ΣL, needgrad)#, needhess)
+            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
             # m.∇β .+= m.w[i] .* m.data[i].∇β
             BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
             m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
             # m.∇L .+= m.w[i] .* m.data[i].∇L
             BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
         end
+        # Here we multiply ΣL once.
+        rmul!(m.∇L, m.ΣL)
     else
         for i = 1:length(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, m.ΣL, needgrad)#, needhess)
+            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
         end
     end
     
@@ -180,9 +205,12 @@ function fit!(
     # starting point
     par0 = Vector{Float64}(undef, npar)
     modelpar_to_optimpar!(par0, m)
+    # print("before warmstart par0 = ", par0, "\n")
     MathProgBase.setwarmstart!(optm, par0)
-
+    # print("after setwarmstart, par0=", par0, "\n")
     # print("after setwarmstart, MathProgBase.getsolution(optm) = ", MathProgBase.getsolution(optm), "\n")
+    optimpar_to_modelpar!(m, MathProgBase.getsolution(optm))
+    # print("after setwarmstart and optimpar_to_modelpar\n")
     # optimize
     MathProgBase.optimize!(optm)
     # print("after optimize!, getsolution(optm) = ", MathProgBase.getsolution(optm), "\n")
@@ -213,12 +241,14 @@ function modelpar_to_optimpar!(
     # print("modelpar_to_optimpar m.β = ", m.Σ, "\n")
     
     # Since modelpar_to_optimpar is only called once, it's ok to allocate Σchol
-    Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
+    Σchol = cholesky(Symmetric(m.Σ), Val(false); check = false)
     # By using cholesky decomposition and optimizing L, 
     # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
     m.ΣL .= Σchol.L
+    # print("In modelpar_to_optimparm, m.ΣL = ", m.ΣL, "\n")
     offset = p + 2
     for j in 1:q
+        # print("modelpar_to_optimpar m.ΣL[j, j] = ", m.ΣL[j, j], "\n")
         par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
         offset += 1
         for i in j+1:q
@@ -237,7 +267,11 @@ Translate optimization variables in `par` to the model parameters in `m`.
 function optimpar_to_modelpar!(
     m::blblmmModel, 
     par::Vector)
+    # print("Called optimpar_to_modelpar \n")
+    # print("At the beginning of optimpar_to_modelpar, m.Σ = ", m.Σ, "\n")
+    # print("At the beginning of optimpar_to_modelpar, par = ", par, "\n")
     p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
+    # print("p = ", p, ", q = ", q, "\n")
     copyto!(m.β, 1, par, 1, p)
     #print("optimpar_to_modelpar par = ", par, "\n")
     # copyto!(dest, do, src, so, N)
@@ -254,7 +288,9 @@ function optimpar_to_modelpar!(
             offset += 1
         end
     end
+    # print("optimpar_to_modelpar m.ΣL = ", m.ΣL, "\n")
     mul!(m.Σ, m.ΣL, transpose(m.ΣL))
+    # print("optimpar_to_modelpar, After translating optimpar to modelpar, m.Σ = ", m.Σ, "\n")
     # updates Σchol so that when we call loglikelihood!(), we are passing the updated cholesky
     # m.Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
     # Σchol = cholesky(Symmetric(m.Σ), Val(true); check = false)
@@ -278,6 +314,7 @@ MathProgBase.features_available(m::blblmmModel) = [:Grad]
 function MathProgBase.eval_f(
     m::blblmmModel, 
     par::Vector)
+    # print("in eval_f, par = ", par, "\n")
     optimpar_to_modelpar!(m, par)
     # print("Inside eval_f \n")
     # print("m.β = ", m.β, "\n")
@@ -300,6 +337,7 @@ function MathProgBase.eval_grad_f(
     grad[p+1] = m.∇τ[1] * m.τ[1]
     # gradient wrt log(diag(L)) and off-diag(L)
     offset = p + 2
+    # print("In eval_grad_f, m.ΣL = ", m.ΣL, "\n")
     for j in 1:q
         grad[offset] = m.∇L[j, j] * m.ΣL[j, j]
         offset += 1

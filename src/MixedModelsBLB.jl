@@ -26,7 +26,7 @@ import LinearAlgebra: BlasFloat, checksquare
 @reexport using MixedModels
 
 export blblmmObs, blblmmModel
-export fit!, fitted, init_MoM!, loglikelihood!, update_res!, update_w!, sweep!
+export fit!, fitted, loglikelihood!, update_res!, update_w!, extract_Σ!
 export blb_one_subset, blb_full_data
 
 """

@@ -67,33 +67,56 @@ println()
 
 Random.seed!(1234)
 
-β̂, Σ̂, τ̂ = blb_full_data(
-    "data/testfile.csv", 
-    @formula(y ~ 1 + x1 + x2 + (1 | id)); 
-    id_name = "id", 
-    cat_names = ["x2"], 
-    subset_size = 300,
-    n_subsets = 2, 
-    n_boots = 3,
-    MoM_init = false,
-    # solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
-    # solver = Ipopt.IpoptSolver(print_level = 0),
-    solver = Ipopt.IpoptSolver(
-        print_level = 5, 
-        derivative_test = "first-order", 
-        derivative_test_print_all = "yes"
-    ),
-    # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
-    # solver = Ipopt.IpoptSolver(print_level = 0),
-    verbose = true
+# β̂, Σ̂, τ̂ = blb_full_data(
+#     "data/testfile.csv", 
+#     @formula(y ~ 1 + x1 + x2 + (1 | id)); 
+#     id_name = "id", 
+#     cat_names = ["x2"], 
+#     subset_size = 300,
+#     n_subsets = 2, 
+#     n_boots = 3,
+#     MoM_init = false,
+#     # solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
+#     # solver = Ipopt.IpoptSolver(print_level = 0),
+    # solver = Ipopt.IpoptSolver(
+    #     print_level = 5, 
+    #     derivative_test = "first-order", 
+    #     derivative_test_print_all = "yes"
+    # ),
+#     # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
+#     # solver = Ipopt.IpoptSolver(print_level = 0),
+#     verbose = true
+# )
+
+
+β̂_blb, Σ̂_blb, τ̂_blb = blb_full_data(
+        # "data/exp2-N-1000-rep-20.csv", 
+        "data/exp2-N-10000-rep-20.csv", 
+        @formula(y ~ 1 + x1 + x2 + (1 + x1 | id)); 
+        id_name = "id", 
+        cat_names = Array{String,1}(), 
+        subset_size = Int64(floor(10000^0.8)),
+        n_subsets = 10, 
+        n_boots = 5,
+        MoM_init = false,
+        # solver = NLopt.NLoptSolver(algorithm=:LD_MMA, maxeval=10000),
+        # solver = Ipopt.IpoptSolver(),
+        solver = Ipopt.IpoptSolver(
+          print_level = 5, 
+          derivative_test = "first-order", 
+          derivative_test_print_all = "yes"
+        ),
+        verbose = true
 )
 
 @info "Confidence intervals:"
 # @show 
 
-writedlm("data/beta-hat.csv", β̂, ',')
-writedlm("data/sigma-hat.csv", Σ̂, ',')
-writedlm("data/tau-hat.csv", τ̂, ',')
+writedlm("data/beta-hat.csv", β̂_blb, ',')
+writedlm("data/sigma-hat.csv", Σ̂_blb, ',')
+writedlm("data/tau-hat.csv", τ̂_blb, ',')
+# timer_blb .= timer_blb ./ 1e9
+# writedlm("data/timer.csv", timer_blb, ',')
 
 end
 

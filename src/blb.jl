@@ -63,7 +63,7 @@ function blb_one_subset(
 
     # Initialize a vector of the blblmmObs objects
     obs = Vector{blblmmObs{Float64}}(undef, b)
-    for (i, grp) in enumerate(unique(id))
+    @views for (i, grp) in enumerate(unique(id))
         gidx = id .== grp
         yi = Float64.(y[gidx])
         Xi = Float64.(X[gidx, :])
@@ -103,7 +103,9 @@ function blb_one_subset(
         MixedModels.fit!(lmm)
         copyto!(m.β, lmm.β)
         m.τ[1] = 1 / (lmm.σ^2)
-        m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) # initialize Σ
+        extract_Σ!(m.Σ, lmm) 
+        # print("m.Σ", m.Σ, "\n")
+        # m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) # initialize Σ
     end
     
     # print("After initilization,\n")
@@ -112,7 +114,7 @@ function blb_one_subset(
     # print("m.Σ = ", m.Σ, "\n")
     
     # Fit LMM using the subsample and get parameter estimates
-    fit!(m; solver = solver) 
+    # fit!(m; solver = solver) 
     # will remove this later because this should be exactly the same as MixedModels.fit!
     copyto!(β_b, m.β)
     copyto!(Σ_b, m.Σ)
@@ -158,6 +160,7 @@ function blb_one_subset(
         # print("m.τ[1] = ", m.τ[1], "\n")
         # print("m.Σ = ", m.Σ, "\n")
 
+        print("before fit!(),", loglikelihood!(m, false, false), "\n")
         # Use weighted loglikelihood to fit the bootstrapped dataset
         fit!(m; solver = solver)
         
@@ -318,10 +321,13 @@ function blb_full_data(
     # count the number of levels of the categorical variables in the full data,
     # then for each sampled subset, we check whether the number of levels match. 
     # If they do, great. Otherwise, the subset is resampled.
-    cat_levels = Dict{String, Int32}()
-    for cat_name in cat_names
-        cat_levels[cat_name] = length(unique(JuliaDB.select(ftable, Symbol(cat_name))))
+    if length(cat_names) > 0
+        cat_levels = Dict{String, Int32}()
+        for cat_name in cat_names
+            cat_levels[cat_name] = length(unique(JuliaDB.select(ftable, Symbol(cat_name))))
+        end
     end
+    
 
     # The size of the parameter vectors can only be decided after creating the LinearMixedModel type, 
     # because that's when we recode categorical vars.
@@ -338,8 +344,8 @@ function blb_full_data(
     # Initialize an array to store the unique IDs for the subset
     blb_id_unique = fill(0, subset_size)
 
-    timer = zeros(n_subsets+1)
-    timer[1] = time_ns()
+    # timer = zeros(n_subsets+1)
+    # timer[1] = time_ns()
     Threads.@threads for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
 
@@ -356,14 +362,19 @@ function blb_full_data(
             # Sample from the full dataset
             sample!(id_unique, blb_id_unique; replace = false)
             subset_indices = LinearIndices(id)[findall(in(blb_id_unique), id)]
-            # Count the number of levels of the categorical variables
-            cat_levels_subset = Dict{String, Int32}()
-            for cat_name in cat_names
-                cat_levels_subset[cat_name] = length(unique(JuliaDB.select(ftable[subset_indices, ], Symbol(cat_name))))
-            end
-            # If the subset levels do not match the full dataset levels, 
-            # skip the current iteration and re-draw blb_id_unique
-            if cat_levels_subset == cat_levels
+
+            if length(cat_names) > 0
+                # Count the number of levels of the categorical variables
+                cat_levels_subset = Dict{String, Int32}()
+                for cat_name in cat_names
+                    cat_levels_subset[cat_name] = length(unique(JuliaDB.select(ftable[subset_indices, ], Symbol(cat_name))))
+                end
+                # If the subset levels do not match the full dataset levels, 
+                # skip the current iteration and re-draw blb_id_unique
+                if cat_levels_subset == cat_levels
+                    subset_good = true
+                end
+            else 
                 subset_good = true
             end
         end
@@ -401,9 +412,9 @@ function blb_full_data(
         # isnothing(re_name) ? Z = intercept : Z = hcat(intercept, JuliaDB.select(ftable, map(Symbol, re_name))[subset_indices, ])
         ####
         # j += 1
-        timer[j] = time_ns()
+        # timer[j] = time_ns()
     end
-    return β̂, Σ̂, τ̂, timer
+    return β̂, Σ̂, τ̂
 end
 
 
