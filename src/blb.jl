@@ -160,7 +160,7 @@ function blb_one_subset(
         # print("m.τ[1] = ", m.τ[1], "\n")
         # print("m.Σ = ", m.Σ, "\n")
 
-        print("before fit!(),", loglikelihood!(m, false, false), "\n")
+        # print("before fit!(),", loglikelihood!(m, false, false), "\n")
         # Use weighted loglikelihood to fit the bootstrapped dataset
         fit!(m; solver = solver)
         
@@ -346,7 +346,8 @@ function blb_full_data(
 
     # timer = zeros(n_subsets+1)
     # timer[1] = time_ns()
-    Threads.@threads for j = 1:n_subsets
+    # Threads.@threads for j = 1:n_subsets
+    for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
 
         # Count the total number of observations in the subset.
