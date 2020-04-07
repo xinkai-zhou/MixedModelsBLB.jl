@@ -1,8 +1,8 @@
 
 # Comparing speed
 
-
-using MixedModelsBLB, MixedModels, Random, Distributions, DataFrames, CSV, RCall
+using MixedModels, Random, Distributions, DataFrames, CSV, RCall
+using MixedModelsBLB
 Random.seed!(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 datasizes = ((Int64(1e4), 20), (Int64(1e4), 50)) 
@@ -67,6 +67,44 @@ for (N, reps) in datasizes
     print("blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
 end
 
+# MixedModels + bootstrap
+B = 2000 # number of bootstrap samples
+mixedmodels_runtime = Vector{Float64}()
+for (N, reps) in datasizes
+    time0 = time_ns()
+    dat = CSV.read(string("data/exp2-N-", N, "-rep-", reps, ".csv"))
+    categorical!(dat, Symbol("id"))
+    lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)
+    fit!(lmm)
+    const rng = MersenneTwister(1234321);
+    boot = parametricbootstrap(rng, B, lmm)
+    # Get CI
+    push!(mixedmodels_runtime, (time_ns() - time0)/1e9)
+end
+CSV.write("data/mixedmodels_runtime.csv", mixedmodels_runtime)
+
+# Rcall, lme4 + bootstrap
+lme4_runtime = Vector{Float64}()
+for (N, reps) in datasizes
+    filename = string("data/exp2-N-", N, "-rep-", reps, ".csv")
+    time0 = time_ns()
+    R"""
+    library(lme4)
+    dat = read.csv($filename, header = T)
+    lmm = lmer(y ~ x1 + x2 + (1 + x1 | id), dat)
+    # Summary functions
+    mySumm <- function(.) { 
+        s <- sigma(.)
+        c(beta =getME(., "beta"), sigma = s, sig01 = unname(s * getME(., "theta"))) 
+        }
+    ## alternatively:
+    mySumm2 <- function(.) {
+        c(beta=fixef(.),sigma=sigma(.), sig01=sqrt(unlist(VarCorr(.))))
+    }
+    boo01 <- bootMer(lmm, mySumm, nsim = $B)
+    """
+    push!(lme4_runtime, (time_ns() - time0)/1e9)
+end
 
 # # MixedModels + bootstrap
 # B = 10 # number of bootstrap samples
