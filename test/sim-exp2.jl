@@ -1,8 +1,8 @@
 
 # Comparing speed
 
-
-using MixedModelsBLB, MixedModels, Random, Distributions, DataFrames, CSV, RCall
+using MixedModels, Random, Distributions, DataFrames, CSV, RCall
+using MixedModelsBLB
 Random.seed!(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 datasizes = ((Int64(1e4), 20), (Int64(1e4), 50)) 
@@ -20,7 +20,7 @@ for (N, reps) in datasizes
         rand(Normal(0, 1), reps * N) # error, standard normal
     id = repeat(1:N, inner = reps)
     dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
-    CSV.write(string("../data/exp2-N-", N, "-rep-", reps, ".csv"), dat)
+    CSV.write(string("data/exp2-N-", N, "-rep-", reps, ".csv"), dat)
 end
 
 
@@ -28,16 +28,16 @@ end
 blb_runtime = Vector{Float64}()
 for (N, reps) in datasizes
     time0 = time_ns()
-    β̂_blb, Σ̂_blb, τ̂_blb, timer_blb = blb_full_data(
-        string("data/exp2-N-", N, "-rep-", rep, ".csv"), 
+    β̂_blb, Σ̂_blb, τ̂_blb = blb_full_data(
+        string("data/exp2-N-", N, "-rep-", reps, ".csv"), 
         @formula(y ~ 1 + x1 + x2 + (1 + x1 | id)); 
         id_name = "id", 
-        cat_names = [], 
-        subset_size = N^0.6,
+        cat_names = Array{String,1}(), 
+        subset_size = Int64(floor(10000^0.8)),
         n_subsets = 2, 
         n_boots = 3,
         MoM_init = false,
-        solver = Ipopt.IpoptSolver(),
+        solver = Ipopt.IpoptSolver(print_level = 0),
         verbose = true
     )
     push!(blb_runtime, (time_ns() - time0)/1e9)
@@ -48,7 +48,7 @@ B = 2000 # number of bootstrap samples
 mixedmodels_runtime = Vector{Float64}()
 for (N, reps) in datasizes
     time0 = time_ns()
-    dat = CSV.read(string("data/exp2-N-", N, "-rep-", rep, ".csv"))
+    dat = CSV.read(string("data/exp2-N-", N, "-rep-", reps, ".csv"))
     categorical!(dat, Symbol("id"))
     lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)
     fit!(lmm)
@@ -62,12 +62,12 @@ end
 # Rcall, lme4 + bootstrap
 lme4_runtime = Vector{Float64}()
 for (N, reps) in datasizes
-    filename = string("data/exp2-N-", N, "-rep-", rep, ".csv")
+    filename = string("data/exp2-N-", N, "-rep-", reps, ".csv")
     time0 = time_ns()
     R"""
     library(lme4)
     dat = read.csv($filename, header = T)
-    lmm = lme(y ~ x1 + x2 + (1 + x1 | id)), dat)
+    lmm = lmer(y ~ x1 + x2 + (1 + x1 | id), dat)
     # Summary functions
     mySumm <- function(.) { 
         s <- sigma(.)

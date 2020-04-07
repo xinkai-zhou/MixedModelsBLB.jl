@@ -160,7 +160,7 @@ function blb_one_subset(
         # print("m.τ[1] = ", m.τ[1], "\n")
         # print("m.Σ = ", m.Σ, "\n")
 
-        print("before fit!(),", loglikelihood!(m, false, false), "\n")
+        # print("before fit!(),", loglikelihood!(m, false, false), "\n")
         # Use weighted loglikelihood to fit the bootstrapped dataset
         fit!(m; solver = solver)
         

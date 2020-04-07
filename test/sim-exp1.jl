@@ -62,7 +62,7 @@ CSV.write("data/exp1-testfile.csv", dat)
     "data/exp1-testfile.csv", 
     @formula(y ~ 1 + x1 + x2 + (1 + x1 | id)); 
     id_name = "id", 
-    cat_names = [], 
+    cat_names = Array{String,1}(), 
     subset_size = (1e6)^0.6,
     n_subsets = 2, 
     n_boots = 3,
