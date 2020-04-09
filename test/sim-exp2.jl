@@ -5,7 +5,7 @@ using MixedModels, Random, Distributions, DataFrames, CSV, RCall
 using MixedModelsBLB
 Random.seed!(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
-datasizes = ((Int64(1e4), 20), (Int64(1e4), 50)) 
+datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
 
 # for (N, reps) in datasizes
 #    # simulate data
