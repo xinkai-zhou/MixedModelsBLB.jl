@@ -5,30 +5,31 @@ using MixedModelsBLB, MixedModels, Random, Distributions, DataFrames, CSV
 
 
 # Global parameters
-N = 1e6 # number of individuals
+N = Int64(1e4) # number of individuals
 reps = 20 # number of observations from each individual
 id = repeat(1:N, inner = reps)
 
 # 1. Get ground truth CI
 # 1.1 Simulate 2000 datasets, estimate parameters on each and get CI
-r = 2000
+r = 20
 # initialize arrays
 x1 = zeros(reps * N)
 x2 = similar(x1)
 rand_intercept = similar(x1)
 rand_slope = similar(x1)
 rand_error = similar(x1)
-y = similar(x1)
+y = similar(x1);
 
-β̂_truth = zeros(r, 2)
-σ̂_0_truth = zeros(r)
+β̂_truth = zeros(r, 3)
+σ̂_0_truth = zeros(r, 2)
+σ̂_e_truth = zeros(r)
 Random.seed!(1)
 for i in 1:r
     rand!(Normal(0, 1), x1)
     rand!(Normal(0, 3), x2)
     rand_intercept = repeat(rand(Normal(0, 1), N), inner = reps)
     @views for j in 1:N
-        rand_slope[(reps * (j-1) + 1) : reps * j] = x1[(reps * (j-1) + 1) : reps * j] * rand(Normal(0, 2), 1)
+        rand_slope[(reps * (j-1) + 1) : reps * j] = x1[(reps * (j-1) + 1) : reps * j] .* rand(Normal(0, 1), 1)
     end
     rand!(Normal(0, 1), rand_error)
     y .= 1 .+ x1 .+ x2 .+ rand_intercept .+ rand_slope .+ rand_error
@@ -36,10 +37,11 @@ for i in 1:r
     df = DataFrame(y=y, x1=x1, x2=x2, id=id)
     categorical!(df, Symbol("id"))
     lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), df)
-    fit!(lmm)
+    MixedModels.fit!(lmm)
     # check the following on a single dataset before running
     β̂_truth[i, :] = lmm.beta
-    σ̂_0_truth[i] = lmm.sigmas
+    σ̂_0_truth[i, :] = [x for x in lmm.sigmas[1]]
+    σ̂_e_truth[i] = lmm.sigma
 end
 
 # Simulate a single dataset that will be used by BLB and bootstrap
