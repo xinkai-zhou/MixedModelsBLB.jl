@@ -16,7 +16,7 @@ end
 function update_res!(
     m::blblmmModel{T}
     ) where T <: BlasReal
-    for i in eachindex(m.data)
+    @inbounds for i in eachindex(m.data)
         update_res!(m.data[i], m.β)
     end
     nothing
@@ -37,9 +37,9 @@ end
 function extract_Σ!(Σ, lmm::LinearMixedModel)
     σρ = MixedModels.VarCorr(lmm).σρ
     q = length(σρ[1][1])
-    for i in 1:q
+    @inbounds for i in 1:q
         Σ[i, i] = (σρ[1][1][i])^2
-        for j in (i+1):q
+        @inbounds for j in (i+1):q
             Σ[i, j] = σρ[1][2][(j-1)] * σρ[1][1][i] * σρ[1][1][j]
         end
     end
@@ -70,7 +70,7 @@ function loglikelihood!(
     # V = obs.Z * Σ * obs.Z' + (1 / τ) * I
     # calculate once 
     τ_inv = (1 / τ[1])
-    for i in 1:n
+    @inbounds for i in 1:n
         obs.V[i, i] += τ_inv 
     end
     
@@ -157,7 +157,7 @@ function loglikelihood!(
     # print("m.Σ=", m.Σ, "\n")
     # print("m.τ=", m.τ, "\n")
     if needgrad
-        for i = 1:length(m.data)
+        @inbounds for i = 1:length(m.data)
             logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
             # m.∇β .+= m.w[i] .* m.data[i].∇β
             BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
@@ -168,7 +168,7 @@ function loglikelihood!(
         # Here we multiply ΣL once.
         rmul!(m.∇L, m.ΣL)
     else
-        for i = 1:length(m.data)
+        @inbounds for i = 1:length(m.data)
             logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
         end
     end
@@ -247,11 +247,11 @@ function modelpar_to_optimpar!(
     m.ΣL .= Σchol.L
     # print("In modelpar_to_optimparm, m.ΣL = ", m.ΣL, "\n")
     offset = p + 2
-    for j in 1:q
+    @inbounds for j in 1:q
         # print("modelpar_to_optimpar m.ΣL[j, j] = ", m.ΣL[j, j], "\n")
         par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
         offset += 1
-        for i in j+1:q
+        @inbounds for i in j+1:q
             par[offset] = m.ΣL[i, j]
             offset += 1
         end
@@ -280,10 +280,10 @@ function optimpar_to_modelpar!(
     m.τ[1] = exp(par[p+1])
     fill!(m.ΣL, 0)
     offset = p + 2
-    for j in 1:q
+    @inbounds for j in 1:q
         m.ΣL[j, j] = exp(par[offset])
         offset += 1
-        for i in j+1:q
+        @inbounds for i in j+1:q
             m.ΣL[i, j] = par[offset]
             offset += 1
         end
@@ -338,10 +338,10 @@ function MathProgBase.eval_grad_f(
     # gradient wrt log(diag(L)) and off-diag(L)
     offset = p + 2
     # print("In eval_grad_f, m.ΣL = ", m.ΣL, "\n")
-    for j in 1:q
+    @inbounds for j in 1:q
         grad[offset] = m.∇L[j, j] * m.ΣL[j, j]
         offset += 1
-        for i in j+1:q
+        @inbounds for i in j+1:q
             grad[offset] = m.∇L[i, j]
             offset += 1
         end

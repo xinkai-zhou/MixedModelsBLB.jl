@@ -63,7 +63,7 @@ function blb_one_subset(
 
     # Initialize a vector of the blblmmObs objects
     obs = Vector{blblmmObs{Float64}}(undef, b)
-    @views for (i, grp) in enumerate(unique(id))
+    @inbounds @views for (i, grp) in enumerate(unique(id))
         gidx = id .== grp
         yi = Float64.(y[gidx])
         Xi = Float64.(X[gidx, :])
@@ -129,11 +129,11 @@ function blb_one_subset(
     # print("m.Σ = ", m.Σ, "\n")
 
     # Bootstrapping
-    for k = 1:n_boots
+    @inbounds for k = 1:n_boots
         verbose && print("Bootstrap iteration ", k, "\n")
         # Generate a parametric bootstrap sample of y and update m.y 
         # in place by looping over blblmmModel.
-        for bidx = 1:b
+        @inbounds for bidx = 1:b
             copyto!(
                 m.data[bidx].y, 
                 m.data[bidx].X * β_b + # fixed effect
@@ -323,7 +323,7 @@ function blb_full_data(
     # If they do, great. Otherwise, the subset is resampled.
     if length(cat_names) > 0
         cat_levels = Dict{String, Int32}()
-        for cat_name in cat_names
+        @inbounds for cat_name in cat_names
             cat_levels[cat_name] = length(unique(JuliaDB.select(ftable, Symbol(cat_name))))
         end
     end
@@ -347,7 +347,7 @@ function blb_full_data(
     # timer = zeros(n_subsets+1)
     # timer[1] = time_ns()
     # Threads.@threads for j = 1:n_subsets
-    for j = 1:n_subsets
+    @inbounds for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
 
         # Count the total number of observations in the subset.
