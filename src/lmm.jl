@@ -36,8 +36,8 @@ end
 # Extract the variance-covariance matrix of variance components
 function extract_Σ!(Σ, lmm::LinearMixedModel)
     σρ = MixedModels.VarCorr(lmm).σρ
-    q = length(σρ[1][1])
-    @inbounds for i in 1:q
+    q = size(Σ, 1) #length(σρ[1][1])
+    @inbounds @views for i in 1:q
         Σ[i, i] = (σρ[1][1][i])^2
         @inbounds for j in (i+1):q
             Σ[i, j] = σρ[1][2][(j-1)] * σρ[1][1][i] * σρ[1][1][j]
@@ -58,89 +58,122 @@ function loglikelihood!(
 
     n, p, q = size(obs.X, 1), size(obs.X, 2), size(obs.Z, 2)
     if needgrad
-        fill!(obs.∇β, 0)
-        fill!(obs.∇τ, 0)
-        fill!(obs.∇L, 0)
+        fill!(obs.∇β, T(0))
+        fill!(obs.∇τ, T(0))
+        fill!(obs.∇L, T(0))
     end
-
-    # evaluate the loglikelihood
+    ###########
+    # objective
+    ###########
     update_res!(obs, β)
-    mul!(obs.storage_qn, Σ, transpose(obs.Z))
-    mul!(obs.V, obs.Z, obs.storage_qn)
-    # V = obs.Z * Σ * obs.Z' + (1 / τ) * I
-    # calculate once 
-    τ_inv = (1 / τ[1])
-    @inbounds for i in 1:n
-        obs.V[i, i] += τ_inv 
+    # Here we compute the inverse of Σ. To avoid allocation, first copy Σ to storage_qq,
+    # then calculate the in-place cholesky, then in-place inverse (only the upper-tri in touched)
+    copyto!(obs.storage_qq, Σ)
+    # print("before potrf, obs.storage_qq = ", obs.storage_qq, "\n")
+    LAPACK.potrf!('U', obs.storage_qq) # in-place cholesky
+    # Calculate the logdet(Σ) part of logl
+    logl = 0
+    # print("after potrf, obs.storage_qq = ", obs.storage_qq, "\n")
+    @inbounds for i in 1:q
+        if obs.storage_qq[i, i] <= 0
+            logl = -Inf
+            return logl
+        else 
+            # (-1//2) logdet(Σ) = (-1//2) \Sum 2*log(obs.storage_qq[i, i])
+            #                   = - \Sum log(obs.storage_qq[i, i])
+            logl -= log(obs.storage_qq[i, i])    
+        end
     end
-    
-    # print("Σ=", Σ, "\n")
-    # print("τ[1]=", τ[1], "\n")
-    # print("obs.V=", obs.V, "\n")
-
-    # Using the cholesky appraoch
-    Vchol = cholesky!(Symmetric(obs.V), Val(true); check = false) 
-    # There is no allocation bcz Vchol is pointing to obs.V
-    # if rank(Vchol.U) < n # if rank deficient
-    # print("rank(Vchol) = ", rank(Vchol))
-    if rank(Vchol) < n # Since Vchol is of Cholesky type, rank(Vchol) doesn't call SVD
+    LAPACK.potri!('U', obs.storage_qq) # in-place inverse (only the upper-tri in touched.)
+    # obs.storage_qq = Σ^{-1} + τZ'Z
+    BLAS.syrk!('U', 'T',  τ[1], obs.Z, T(1), obs.storage_qq) # only the upper-tri is touched
+    LinearAlgebra.copytri!(obs.storage_qq, 'U')
+    storage_qq_chol = cholesky!(obs.storage_qq, Val(true); check = false) 
+    if rank(storage_qq_chol) < q # Since storage_qq_chol is of Cholesky type, rank doesn't call SVD
         logl = -Inf # set logl to -Inf and return
         return logl
     end
-    ldiv!(obs.storage_n1, Vchol, obs.res)
-    logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
+    # (Σ^{-1} + τZ'Z)^{-1} Z'
+    ldiv!(obs.storage_qn, storage_qq_chol, transpose(obs.Z))
+    # -τ^2 * Z (Σ^{-1} + τZ'Z)^{-1} Z'
+    BLAS.gemm!('N', 'N', -τ[1]^2, obs.Z, obs.storage_qn, T(0), obs.storage_nn)
+    @inbounds for i in 1:n
+        obs.storage_nn[i, i] += τ[1]
+    end
+    # Now obs.storage_nn is Ω^{-1}.
+    BLAS.gemv!('T', T(1), obs.storage_nn, obs.res, 0., obs.storage_n1)
+    # Currently logl equals logdet(Σ)
+    logl += (-1//2) * (logdet(storage_qq_chol) + n * log(1/τ[1]) + dot(obs.res, obs.storage_n1))
+    # print("New way logl = ", logl, "\n")
+
+    ###########
     # gradient
+    ###########
     if needgrad
-        # print("ΣL = ", ΣL, "\n")
-        # print("LL' = ", ΣL * ΣL', "\n")
-        # print("Σ = ", Σ, "\n")
-        
         # wrt β
         # copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
-        BLAS.gemv!('T', 1., obs.X, obs.storage_n1, false, obs.∇β)
-
-        # wrt L
-        # new code 
-        ldiv!(obs.storage_nq, Vchol, obs.Z)
-        BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, 0., obs.∇L)
-        BLAS.gemv!('T', 1., obs.storage_nq, obs.res, 0., obs.storage_1q)
+        BLAS.gemv!('T', T(1), obs.X, obs.storage_n1, T(0), obs.∇β)
+        # wrt L, New code using Woodbury
+        # \Omegabf^{-1}\Zbf_i
+        BLAS.gemm!('N', 'N', T(1), obs.storage_nn, obs.Z, T(0), obs.storage_nq)
+        #  -\Zbf_i' \Omegabf^{-1}\Zbf_i 
+        BLAS.gemm!('T', 'N', T(-1), obs.Z, obs.storage_nq, T(0), obs.∇L)
+        # \Zbf_i'\Omegabf^{-1}\rbf 
+        BLAS.gemv!('T', T(1), obs.storage_nq, obs.res, T(0), obs.storage_1q)
+        # -\Zbf_i' \Omegabf^{-1}\Zbf_i + \Zbf_i'\Omegabf^{-1}\rbf \rbf'\Omegabf^{-1}\Zbf_i
         BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.∇L)
-        # !!! use trmm for triangular matrix multiplication
-        # Since ΣL is the same for all clusters, instead of doing rmul! repeatedly, 
-        # we will do it once in the aggregate step.
-        # rmul!(obs.∇L, ΣL)
-        
-        
-        # ldiv!(obs.storage_nq, Vchol, obs.Z)
-        # # Original code ----
-        # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.Z, obs.storage_nq))
-        # # # BLAS.gemm!('T', 'N', obs.Z, obs.storage_nq, false, obs.storage_qq)
-        # # rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        # # obs.∇L .= - obs.storage_qq
-        # # New code ----
-        # BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, false, obs.∇L)
-        # rmul!(obs.∇L, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        # # copyto!(obs.storage_1q, BLAS.gemm('T', 'N', reshape(obs.res, (n, 1)), obs.storage_nq))
-        # BLAS.gemv!('T', 1., obs.storage_nq, obs.res, false, obs.storage_1q)
-        # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', obs.storage_1q, obs.storage_1q))
-        # # copyto!(obs.storage_qq, BLAS.gemm('T', 'N', reshape(obs.storage_1q, (1, q)), reshape(obs.storage_1q, (1, q))))
-        # # Since we initialized storage_qq as 0, the following should work
-        # obs.storage_qq .= 0.
-        # BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.storage_qq)
-        # rmul!(obs.storage_qq, ΣL) # Calculate AB, overwriting A. B must be of special matrix type.
-        # obs.∇L .+= obs.storage_qq 
-
-        # wrt τ
-        # Since Vchol and V are no longer needed, we can calculate in-place inverse of obs.V
-        LAPACK.potri!('U', obs.V)
-        obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.V) - dot(obs.storage_n1, obs.storage_n1))
-        # ldiv!(obs.storage_nn, Vchol, obs.I_n)
-        # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.storage_nn) - dot(obs.storage_n1, obs.storage_n1))
+        # new code with Woodbury
+        obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.storage_nn) - dot(obs.storage_n1, obs.storage_n1))
     end
+    # print("new way ∇τ = ", obs.∇τ[1], "\n")
+    # print("new way ∇L", obs.∇L, "\n")
+
+    # ############################################################################
+    # # Without Woodbury
+    # ############################################################################
+    # # old way of calculating the objective 
+    # update_res!(obs, β)
+    # mul!(obs.storage_qn, Σ, transpose(obs.Z))
+    # mul!(obs.V, obs.Z, obs.storage_qn)
+    # # V = obs.Z * Σ * obs.Z' + (1 / τ) * I
+    # # calculate once 
+    # τ_inv = (1 / τ[1])
+    # @inbounds for i in 1:n
+    #     obs.V[i, i] += τ_inv 
+    # end
+    # # Using the cholesky appraoch
+    # Vchol = cholesky!(Symmetric(obs.V), Val(true); check = false) 
+    # if rank(Vchol) < n # Since Vchol is of Cholesky type, rank(Vchol) doesn't call SVD
+    #     logl = -Inf # set logl to -Inf and return
+    #     return logl
+    # end
+    # ldiv!(obs.storage_n1, Vchol, obs.res)
+    # logl = (-1//2) * (logdet(Vchol) + dot(obs.res, obs.storage_n1))
+    # print("Old way logl = ", logl, "\n")
+
+    # # gradient
+    # if needgrad
+    #     # wrt β
+    #     # copyto!(obs.∇β, vec(BLAS.gemm('T', 'N', obs.X, obs.storage_n1)))
+    #     BLAS.gemv!('T', T(1), obs.X, obs.storage_n1, T(0), obs.∇β)
+    #     # old code for gradient wrt L
+    #     ldiv!(obs.storage_nq, Vchol, obs.Z)
+    #     BLAS.gemm!('T', 'N', -1., obs.Z, obs.storage_nq, 0., obs.∇L)
+    #     BLAS.gemv!('T', 1., obs.storage_nq, obs.res, 0., obs.storage_1q)
+    #     BLAS.ger!(1., obs.storage_1q, obs.storage_1q, obs.∇L)
+    #     # # old code for gradient wrt τ
+    #     # # Since Vchol and V are no longer needed, we can calculate in-place inverse of obs.V
+    #     # # obs.V holds the in place cholesky of V
+    #     LAPACK.potri!('U', obs.V)
+    #     obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.V) - dot(obs.storage_n1, obs.storage_n1))
+    #     # # ldiv!(obs.storage_nn, Vchol, obs.I_n)
+    #     # # obs.∇τ[1] = (1/(2 * τ[1]^2)) * (tr(obs.storage_nn) - dot(obs.storage_n1, obs.storage_n1))
+    # end
+    # print("old way ∇τ = ", obs.∇τ[1], "\n")
+    # print("old way ∇L", obs.∇L, "\n")
 
     # Why can't we use autodiff???
     logl
-    
 end
 
 function loglikelihood!(
@@ -167,6 +200,8 @@ function loglikelihood!(
         end
         # Here we multiply ΣL once.
         rmul!(m.∇L, m.ΣL)
+        # BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
+        # 'R', 'L', 'N', 'N': right side, lower, no transpose, use the diagonal of m.ΣL
     else
         @inbounds for i = 1:length(m.data)
             logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)

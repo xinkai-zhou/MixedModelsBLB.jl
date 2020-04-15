@@ -58,9 +58,6 @@ function blb_one_subset(
     # # refer to the same empty vector. So if we use copyto!() to update, all elements of 
     # # the vector will be updated with the same value.
 
-    # Initialize an array for storing multinomial counts
-    ns = zeros(b)
-
     # Initialize a vector of the blblmmObs objects
     obs = Vector{blblmmObs{Float64}}(undef, b)
     @inbounds @views for (i, grp) in enumerate(unique(id))
@@ -128,18 +125,33 @@ function blb_one_subset(
     # print("m.τ[1] = ", m.τ[1], "\n")
     # print("m.Σ = ", m.Σ, "\n")
 
+    
+    ns = zeros(b) # Initialize an array for storing multinomial counts
+    re_storage = zeros(q) # for storing random effects
+    re_dist = MvNormal(zeros(q), Σ_b) # dist of random effects
+    err_dist = Normal(T(0), sqrt(1 / τ_b[1]))
+    mult_prob = ones(b) / b
+    mult_dist = Multinomial(N, mult_prob)
+    
+    bootstrap_runtime = Vector{Float64}()
     # Bootstrapping
     @inbounds for k = 1:n_boots
         verbose && print("Bootstrap iteration ", k, "\n")
+        time0 = time_ns()
         # Generate a parametric bootstrap sample of y and update m.y 
         # in place by looping over blblmmModel.
-        @inbounds for bidx = 1:b
-            copyto!(
-                m.data[bidx].y, 
-                m.data[bidx].X * β_b + # fixed effect
-                m.data[bidx].Z * rand(MvNormal(zeros(size(Σ_b, 1)), Σ_b)) + # random effect
-                rand(Normal(0, sqrt(1 / τ_b[1])), length(m.data[bidx].y)) # error, standard normal
-            )
+        @inbounds @views for bidx = 1:b
+            rand!(err_dist, m.data[bidx].y) # y = standard normal error
+            BLAS.gemv!('N', T(1), m.data[bidx].X, β_b, T(1), m.data[bidx].y) # y = Xβ + error
+            rand!(re_dist, re_storage) # simulating random effects
+            BLAS.gemv!('N', T(1), m.data[bidx].Z, re_storage, T(1), m.data[bidx].y) # y = Xβ + Zα + error
+            # old code
+            # copyto!(
+            #     m.data[bidx].y, 
+            #     m.data[bidx].X * β_b + # fixed effect
+            #     m.data[bidx].Z * rand!(mvn_dist, rand_effects) + # random effect
+            #     rand(err_dist, length(m.data[bidx].y)) # error, standard normal
+            # )
         end
         # # save the data
         # y = Vector{Float64}()
@@ -149,7 +161,7 @@ function blb_one_subset(
         # writedlm("bootstrap-y.csv", y, ',')
 
         # Get weights by drawing N i.i.d. samples from multinomial
-        rand!(Multinomial(N, ones(b)/b), ns) 
+        rand!(mult_dist, ns) 
         # writedlm("bootstrap-ns.csv", ns, ',')
 
         # Update weights in blblmmModel
@@ -181,7 +193,8 @@ function blb_one_subset(
         copyto!(m.Σ, Σ_b)
         copyto!(m.τ, τ_b)
         # m.τ[1] = τ_b[1]
-
+        push!(bootstrap_runtime, (time_ns() - time0)/1e9)
+        print("bootstrap_runtime = ", bootstrap_runtime, "\n")
     end
     return β̂, Σ̂, τ̂
 end
