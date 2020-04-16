@@ -48,7 +48,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     # HΣ::Matrix{T}   # Hessian wrt Σ
     res::Vector{T}  # residual vector
     #??? Do we need ztz, xtz?????
-    xtx::Matrix{T}  # Xi'Xi (p-by-p)
+    # xtx::Matrix{T}  # Xi'Xi (p-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
     # xtz::Matrix{T}  # Xi'Zi (p-by-q)
     storage_n1::Vector{T}
@@ -80,7 +80,7 @@ function blblmmObs(
     # Hτ  = Matrix{T}(undef, 1, 1)
     # HΣ  = Matrix{T}(undef, abs2(q), abs2(q))
     res = Vector{T}(undef, n)
-    xtx = transpose(X) * X
+    # xtx = transpose(X) * X
     ztz = transpose(Z) * Z
     # xtz = transpose(X) * Z
     storage_n1 = Vector{T}(undef, n)
@@ -96,7 +96,7 @@ function blblmmObs(
         y, X, Z, 
         ∇β, ∇τ, ∇L, 
         # Hβ, Hτ, HΣ,
-        res, xtx, ztz, #xtz,
+        res, ztz, #xtz,
         storage_n1, storage_1q, 
         storage_qn, storage_nq, 
         storage_qq, storage_nn, V)

@@ -137,7 +137,7 @@ function blb_one_subset(
     # Bootstrapping
     @inbounds for k = 1:n_boots
         verbose && print("Bootstrap iteration ", k, "\n")
-        time0 = time_ns()
+        # time0 = time_ns()
         # Generate a parametric bootstrap sample of y and update m.y 
         # in place by looping over blblmmModel.
         @inbounds @views for bidx = 1:b
@@ -193,8 +193,8 @@ function blb_one_subset(
         copyto!(m.Σ, Σ_b)
         copyto!(m.τ, τ_b)
         # m.τ[1] = τ_b[1]
-        push!(bootstrap_runtime, (time_ns() - time0)/1e9)
-        print("bootstrap_runtime = ", bootstrap_runtime, "\n")
+        # push!(bootstrap_runtime, (time_ns() - time0)/1e9)
+        # print("bootstrap_runtime = ", bootstrap_runtime, "\n")
     end
     return β̂, Σ̂, τ̂
 end

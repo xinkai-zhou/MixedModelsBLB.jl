@@ -86,7 +86,8 @@ function loglikelihood!(
     end
     LAPACK.potri!('U', obs.storage_qq) # in-place inverse (only the upper-tri in touched.)
     # obs.storage_qq = Σ^{-1} + τZ'Z
-    BLAS.syrk!('U', 'T',  τ[1], obs.Z, T(1), obs.storage_qq) # only the upper-tri is touched
+    BLAS.axpy!(τ[1], obs.ztz, obs.storage_qq)
+    # BLAS.syrk!('U', 'T',  τ[1], obs.Z, T(1), obs.storage_qq) # only the upper-tri is touched
     LinearAlgebra.copytri!(obs.storage_qq, 'U')
     storage_qq_chol = cholesky!(obs.storage_qq, Val(true); check = false) 
     if rank(storage_qq_chol) < q # Since storage_qq_chol is of Cholesky type, rank doesn't call SVD
