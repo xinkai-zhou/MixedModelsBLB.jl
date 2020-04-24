@@ -42,23 +42,23 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     # working arrays
     ∇β::Vector{T}   # gradient wrt β
     ∇τ::Vector{T}   # gradient wrt τ
-    ∇L::Matrix{T}   # gradient wrt Σ 
-    # Hβ::Matrix{T}   # Hessian wrt β
-    # Hτ::Matrix{T}   # Hessian wrt τ
-    # HΣ::Matrix{T}   # Hessian wrt Σ
+    ∇L::Matrix{T}   # gradient wrt L 
+    Hβ::Matrix{T}   # Hessian wrt β
+    Hτ::Matrix{T}   # Hessian wrt τ
+    HL::Matrix{T}   # Hessian wrt L
     res::Vector{T}  # residual vector
-    #??? Do we need ztz, xtz?????
-    # xtx::Matrix{T}  # Xi'Xi (p-by-p)
+    xtx::Matrix{T}  # Xi'Xi (p-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
-    # xtz::Matrix{T}  # Xi'Zi (p-by-q)
-    storage_n1::Vector{T}
-    storage_1q::Vector{T}
+    ztx::Matrix{T}  # Zi'Xi (q-by-p)
+    storage_n::Vector{T}
+    storage_q::Vector{T}
     storage_qn::Matrix{T}
     storage_nq::Matrix{T}
     storage_qq::Matrix{T}
-    storage_nn::Matrix{T}
-    # I_n::SparseArrays.SparseMatrixCSC{T, Int64}
-    V::Matrix{T}
+    storage_qq_1::Matrix{T}
+    storage_qp::Matrix{T}
+    # storage_nn::Matrix{T}
+    # V::Matrix{T}
     #Vchol::CholeskyPivoted{T}
 end
 #storage_q1::Vector{T}
@@ -71,35 +71,38 @@ function blblmmObs(
     Z::Matrix{T}
     ) where T <: BlasReal
     n, p, q = size(X, 1), size(X, 2), size(Z, 2)
+    q◺ = ◺(q)
     @assert length(y) == n "length(y) should be equal to size(X, 1)"
     # working arrays
     ∇β  = Vector{T}(undef, p)
     ∇τ  = Vector{T}(undef, 1)
     ∇L  = Matrix{T}(undef, q, q)
-    # Hβ  = Matrix{T}(undef, p, p)
-    # Hτ  = Matrix{T}(undef, 1, 1)
-    # HΣ  = Matrix{T}(undef, abs2(q), abs2(q))
+    Hβ  = Matrix{T}(undef, p, p)
+    Hτ  = Matrix{T}(undef, 1, 1)
+    HL  = Matrix{T}(undef, q◺, q◺)
     res = Vector{T}(undef, n)
-    # xtx = transpose(X) * X
+    xtx = transpose(X) * X
     ztz = transpose(Z) * Z
-    # xtz = transpose(X) * Z
-    storage_n1 = Vector{T}(undef, n)
-    storage_1q = Vector{T}(undef, q)
+    ztx = transpose(Z) * X
+    storage_n = Vector{T}(undef, n)
+    storage_q = Vector{T}(undef, q)
     storage_qn = Matrix{T}(undef, q, n)
     storage_nq = Matrix{T}(undef, n, q)
-    storage_qq = zeros(T, q, q)
-    storage_nn = Matrix{T}(undef, n, n)
-    # I_n = sparse(LinearAlgebra.I, n, n)
-    V = Matrix{T}(undef, n, n)
+    storage_qq = Matrix{T}(undef, q, q) 
+    storage_qq_1 = Matrix{T}(undef, q, q) 
+    storage_qp = Matrix{T}(undef, q, p)
+    # storage_nn = Matrix{T}(undef, n, n)
+    # V = Matrix{T}(undef, n, n)
     # Vchol = cholesky(V, Val(true); check = false)
     blblmmObs{T}(
         y, X, Z, 
         ∇β, ∇τ, ∇L, 
-        # Hβ, Hτ, HΣ,
-        res, ztz, #xtz,
-        storage_n1, storage_1q, 
+        Hβ, Hτ, HL,
+        res, xtx, ztz, ztz,
+        storage_n, storage_q, 
         storage_qn, storage_nq, 
-        storage_qq, storage_nn, V)
+        storage_qq, storage_qq_1, 
+        storage_qp)#, storage_nn, V)
 end
 # constructor
 #storage_q1 = Vector{T}(undef, q)
