@@ -44,7 +44,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     ∇τ::Vector{T}   # gradient wrt τ
     ∇L::Matrix{T}   # gradient wrt L 
     Hβ::Matrix{T}   # Hessian wrt β
-    Hτ::Matrix{T}   # Hessian wrt τ
+    Hτ::Vector{T}   # Hessian wrt τ
     HL::Matrix{T}   # Hessian wrt L
     res::Vector{T}  # residual vector
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
@@ -78,7 +78,7 @@ function blblmmObs(
     ∇τ  = Vector{T}(undef, 1)
     ∇L  = Matrix{T}(undef, q, q)
     Hβ  = Matrix{T}(undef, p, p)
-    Hτ  = Matrix{T}(undef, 1, 1)
+    Hτ  = Vector{T}(undef, 1)
     HL  = Matrix{T}(undef, q◺, q◺)
     res = Vector{T}(undef, n)
     xtx = transpose(X) * X
@@ -98,7 +98,7 @@ function blblmmObs(
         y, X, Z, 
         ∇β, ∇τ, ∇L, 
         Hβ, Hτ, HL,
-        res, xtx, ztz, ztz,
+        res, xtx, ztz, ztx,
         storage_n, storage_q, 
         storage_qn, storage_nq, 
         storage_qq, storage_qq_1, 
@@ -119,7 +119,7 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     # data
     data::Vector{blblmmObs{T}}
     w::Vector{T}    # a vector of weights from bootstraping the subset
-    ntotal::Int     # total number of clusters
+    # ntotal::Int     # total number of clusters
     p::Int          # number of mean parameters in linear regression
     q::Int          # number of random effects
     # parameters
@@ -127,22 +127,23 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     τ::Vector{T}    # inverse of linear regression variance parameter 
     # we used the inverse so that the objective function is convex
     Σ::Matrix{T}    # q-by-q (psd) matrix
-    # Σchol::CholeskyPivoted{T}
     # working arrays
-    ΣL::LowerTriangular{T, Matrix{T}}
+    # ΣL::LowerTriangular{T, Matrix{T}}
+    ΣL::Matrix{T}
     ∇β::Vector{T}   # gradient from all observations
     ∇τ::Vector{T}
     ∇L::Matrix{T}
     Hβ::Matrix{T}   # Hessian from all observations
-    Hτ::Matrix{T}
-    HΣ::Matrix{T}
-    XtX::Matrix{T}      # X'X = sum_i Xi'Xi
-    storage_qq::Matrix{T}
-    storage_nq::Matrix{T}
+    Hτ::Vector{T}
+    HL::Matrix{T}
+    # XtX::Matrix{T}      # X'X = sum_i Xi'Xi
+    # storage_qq::Matrix{T}
+    # storage_nq::Matrix{T}
 end
 
 function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     n, p, q = length(obsvec), size(obsvec[1].X, 2), size(obsvec[1].Z, 2)
+    q◺ = ◺(q)
     npar = p + 1 + (q * (q + 1)) >> 1
     # since X includes a column of 1, p is the number of mean parameters
     # the cholesky factor for the qxq random effect mx has (q * (q + 1))/2 values
@@ -152,31 +153,32 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     β   = Vector{T}(undef, p)
     τ   = Vector{T}(undef, 1)
     Σ   = Matrix{T}(undef, q, q)
-    # Σchol = cholesky(Σ, Val(true); check = false)
-    ΣL  = LowerTriangular(Matrix{T}(undef, q, q))
+    # ΣL  = LowerTriangular(Matrix{T}(undef, q, q))
+    ΣL  = Matrix{T}(undef, q, q)
     ∇β  = Vector{T}(undef, p)
     ∇τ  = Vector{T}(undef, 1)
     ∇L  = Matrix{T}(undef, q, q)
     Hβ  = Matrix{T}(undef, p, p)
-    Hτ  = Matrix{T}(undef, 1, 1)
-    HΣ  = Matrix{T}(undef, abs2(q), abs2(q))
-    XtX = zeros(T, p, p) # sum_i xi'xi
-    ntotal = 0
-    for i in eachindex(obsvec)
-        ntotal  += length(obsvec[i].y)
-        XtX    .+= obsvec[i].xtx
-    end
-    storage_qq = Matrix{T}(undef, q, q)
-    storage_nq = Matrix{T}(undef, n, q)
+    Hτ  = Vector{T}(undef, 1)
+    HL  = Matrix{T}(undef, q◺, q◺)
+    # XtX = zeros(T, p, p) # sum_i xi'xi
+    # ntotal = 0
+    # for i in eachindex(obsvec)
+    #     ntotal  += length(obsvec[i].y)
+    #     XtX    .+= obsvec[i].xtx
+    # end
+    # storage_qq = Matrix{T}(undef, q, q)
+    # storage_nq = Matrix{T}(undef, n, q)
     
-    blblmmModel{T}(obsvec, w, ntotal, p, q, 
+    blblmmModel{T}(obsvec, w, p, q, 
         β, τ, Σ, ΣL, 
-        ∇β, ∇τ, ∇L, Hβ, Hτ, HΣ, 
-        XtX, storage_qq, storage_nq)
+        ∇β, ∇τ, ∇L, Hβ, Hτ, HL) 
+        # XtX, storage_qq, storage_nq)
 end
 
 
 include("lmm.jl")
 include("blb.jl")
+include("multivariate_calculus.jl")
 
 end # module

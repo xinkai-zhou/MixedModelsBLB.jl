@@ -51,7 +51,7 @@ function loglikelihood!(
     obs::blblmmObs{T},
     β::Vector{T},
     τ::Vector{T}, # inverse of linear regression variance
-    Σ::Matrix{T},
+    # Σ::Matrix{T},
     ΣL::Matrix{T},
     needgrad::Bool = false,
     needhess::Bool = false
@@ -88,21 +88,19 @@ function loglikelihood!(
     # chol^{-1} L'Z'r
     # BLAS.trsv!(ul, tA, dA, obs.storage_qq, b)
     BLAS.trsv!('U', 'T', 'N', obs.storage_qq, obs.storage_q)
-    logl = 0
+    logl = n * log(2π * τinv)
     @inbounds for i in 1:q
         if obs.storage_qq[i, i] <= 0
             logl = -Inf
             return logl
         else 
             # Calculate logdet(I + L'Z'ZL) through cholesky.
-            logl -= log(obs.storage_qq[i, i])    
+            logl += 2 * log(obs.storage_qq[i, i])    
         end
     end
-    logl += (-1//2) * (n * log(1/τ[1] + τ[1] * dot(obs.res, obs.res) - 
-                        τ[1]^2 * dot(obs.storage_q, obs.storage_q)))
-    
-    
-    
+    logl += τ[1] * dot(obs.res, obs.res) - τ[1]^2 * dot(obs.storage_q, obs.storage_q)
+    logl /= -2
+
     ###########
     # gradient
     ###########
@@ -117,7 +115,7 @@ function loglikelihood!(
         # First calculate τX'r
         BLAS.gemv!('T', τ[1], obs.X, obs.res, T(0), obs.∇β)
         # then, obs.∇β = τX'r + X'Z L(I+τLZ'ZL)^{-1} L'Z'r
-        BLAS.gemv!('N', -τ[1]^2, obs.xtz, obs.storage_q, T(1), obs.∇β)
+        BLAS.gemv!('T', -τ[1]^2, obs.ztx, obs.storage_q, T(1), obs.∇β)
 
         # wrt τ
         # Since we no longer need obs.res, update obs.res to be Ω^{-1} r
@@ -126,10 +124,11 @@ function loglikelihood!(
         # Currently, storage_qq_1 = τ L'Z'Z L
         BLAS.trsm!('L', 'U', 'T', 'N', 1/τ[1], obs.storage_qq, obs.storage_qq_1)
         BLAS.trsm!('L', 'U', 'N', 'N', T(1), obs.storage_qq, obs.storage_qq_1)
-        needhess && obs.Hτ[1, 1] = (τinv^2 / 2) * n - τinv^2 * tr(obs.storage_qq_1)
+        if needhess
+            obs.Hτ[1] = (τinv^2 / 2) * n - τinv^2 * tr(obs.storage_qq_1)
+        end
         obs.∇τ[1] = (τinv / 2) * n - (1//2) * tr(obs.storage_qq_1) - 
                     (τinv^2 / 2) * dot(obs.res, obs.res)
-
 
         # Currently, storage_qq is holding the chol factor
         # Before it is destroyed, we need to calculate chol^{-1} L'Z'X for the hessian of β
@@ -148,8 +147,10 @@ function loglikelihood!(
         ## Before destroying storage_qq_1, we need to calculate its product with 
         ## itself for the hessian of \tau. Since storage_qq is no longer
         ## needed, we overwrite it with a rank-k update
-        needhess && BLAS.gemm!('N', 'N', T(1), obs.storage_qq_1, obs.storage_qq_1, T(0), obs.storage_qq)
-        needhess && obs.Hτ[1, 1] += (1//2) * tr(obs.storage_qq)
+        if needhess
+            BLAS.gemm!('N', 'N', T(1), obs.storage_qq_1, obs.storage_qq_1, T(0), obs.storage_qq)
+            obs.Hτ[1] += (1//2) * tr(obs.storage_qq)
+        end
         # Since we no longer need storage_qq_1, we overwrite it with a rank-k update:
         # storage_qq_1 = τ^2 * Z'ZL(I+τLZ'ZL)^{-1}L'Z'Z
         BLAS.syrk!('U', 'T', τ[1]^2, obs.∇L, T(0), obs.storage_qq_1)
@@ -207,38 +208,60 @@ function loglikelihood!(
     needgrad::Bool = false,
     needhess::Bool = false
     ) where T <: BlasReal
+
     logl = zero(T)
     if needgrad
         fill!(m.∇β, 0)
         fill!(m.∇τ, 0)
         fill!(m.∇L, 0)
     end
+    if needhess
+        fill!(m.Hβ, 0)
+        fill!(m.Hτ, 0)
+        fill!(m.HL, 0)
+    end
     # print("m.Σ=", m.Σ, "\n")
     # print("m.τ=", m.τ, "\n")
-    if needgrad
-        @inbounds for i = 1:length(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
-            # m.∇β .+= m.w[i] .* m.data[i].∇β
+
+    for i in eachindex(m.data)
+        logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.ΣL, needgrad, needhess)
+        if needgrad
             BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
-            m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
-            # m.∇L .+= m.w[i] .* m.data[i].∇L
+            # m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
+            BLAS.axpy!(m.w[i], m.data[i].∇τ, m.∇τ)
             BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
         end
-        # Here we multiply ΣL once.
-        rmul!(m.∇L, m.ΣL)
-        # BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
-        # 'R', 'L', 'N', 'N': right side, lower, no transpose, use the diagonal of m.ΣL
-    else
-        @inbounds for i = 1:length(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
+        if needhess
+            BLAS.axpy!(m.w[i], m.data[i].Hβ, m.Hβ)
+            # m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
+            BLAS.axpy!(m.w[i], m.data[i].Hτ, m.Hτ)
+            BLAS.axpy!(m.w[i], m.data[i].HL, m.HL)
         end
     end
-    
-    # print("In loglikelihood(m), m.∇β=", m.∇β, "\n")
-    # print("In loglikelihood(m), m.∇τ[1]=", m.∇τ[1], "\n")
-    # print("In loglikelihood(m), m.∇L=", m.∇L, "\n")
-    # print("m.τ[1] = ", m.τ, "\n")
-    # print("logl = ", logl, "\n")
+    # To save cost, we didn't multiply ΣL above in the expression of ∇L
+    # Here we do the multiplication
+    needgrad && BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
+
+    # OLD CODE
+    # if needgrad
+    #     @inbounds for i = 1:length(m.data)
+    #         logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad, needhess)
+    #         # m.∇β .+= m.w[i] .* m.data[i].∇β
+    #         BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
+    #         m.∇τ[1] += m.w[i] * m.data[i].∇τ[1]
+    #         # m.∇L .+= m.w[i] .* m.data[i].∇L
+    #         BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
+    #     end
+    #     # Here we multiply ΣL once.
+    #     rmul!(m.∇L, m.ΣL)
+    #     # BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
+    #     # 'R', 'L', 'N', 'N': right side, lower, no transpose, use the diagonal of m.ΣL
+    # else
+    #     @inbounds for i = 1:length(m.data)
+    #         logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.τ, m.Σ, needgrad)
+    #     end
+    # end
+
     logl
 end
 
