@@ -41,10 +41,11 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     Z::Matrix{T}
     # working arrays
     ∇β::Vector{T}   # gradient wrt β
-    ∇τ::Vector{T}   # gradient wrt τ
+    ∇σ2::Vector{T}   # gradient wrt σ2
     ∇L::Matrix{T}   # gradient wrt L 
     Hβ::Matrix{T}   # Hessian wrt β
-    Hτ::Vector{T}   # Hessian wrt τ
+    Hσ2::Vector{T}   # Hessian wrt σ2
+    Hσ2L::Matrix{T}   # Hessian cross term
     HL::Matrix{T}   # Hessian wrt L
     res::Vector{T}  # residual vector
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
@@ -75,10 +76,11 @@ function blblmmObs(
     @assert length(y) == n "length(y) should be equal to size(X, 1)"
     # working arrays
     ∇β  = Vector{T}(undef, p)
-    ∇τ  = Vector{T}(undef, 1)
+    ∇σ2  = Vector{T}(undef, 1)
     ∇L  = Matrix{T}(undef, q, q)
     Hβ  = Matrix{T}(undef, p, p)
-    Hτ  = Vector{T}(undef, 1)
+    Hσ2  = Vector{T}(undef, 1)
+    Hσ2L  = Matrix{T}(undef, q, q)
     HL  = Matrix{T}(undef, q◺, q◺)
     res = Vector{T}(undef, n)
     xtx = transpose(X) * X
@@ -96,13 +98,14 @@ function blblmmObs(
     # Vchol = cholesky(V, Val(true); check = false)
     blblmmObs{T}(
         y, X, Z, 
-        ∇β, ∇τ, ∇L, 
-        Hβ, Hτ, HL,
+        ∇β, ∇σ2, ∇L, 
+        Hβ, Hσ2, Hσ2L, HL,
         res, xtx, ztz, ztx,
         storage_n, storage_q, 
         storage_qn, storage_nq, 
         storage_qq, storage_qq_1, 
-        storage_qp)#, storage_nn, V)
+        storage_qp
+    )#, storage_nn, V)
 end
 # constructor
 #storage_q1 = Vector{T}(undef, q)
@@ -124,18 +127,19 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     q::Int          # number of random effects
     # parameters
     β::Vector{T}    # p-vector of mean regression coefficients
-    τ::Vector{T}    # inverse of linear regression variance parameter 
+    σ2::Vector{T}    # inverse of linear regression variance parameter 
     # we used the inverse so that the objective function is convex
     Σ::Matrix{T}    # q-by-q (psd) matrix
     # working arrays
     # ΣL::LowerTriangular{T, Matrix{T}}
     ΣL::Matrix{T}
     ∇β::Vector{T}   # gradient from all observations
-    ∇τ::Vector{T}
+    ∇σ2::Vector{T}
     ∇L::Matrix{T}
     Hβ::Matrix{T}   # Hessian from all observations
-    Hτ::Vector{T}
+    Hσ2::Vector{T}
     HL::Matrix{T}
+    Hσ2L::Matrix{T}
     # XtX::Matrix{T}      # X'X = sum_i Xi'Xi
     # storage_qq::Matrix{T}
     # storage_nq::Matrix{T}
@@ -151,16 +155,17 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     # then there is the error variance
     w   = ones(T, n) # initialize weights to be 1
     β   = Vector{T}(undef, p)
-    τ   = Vector{T}(undef, 1)
+    σ2   = Vector{T}(undef, 1)
     Σ   = Matrix{T}(undef, q, q)
     # ΣL  = LowerTriangular(Matrix{T}(undef, q, q))
     ΣL  = Matrix{T}(undef, q, q)
     ∇β  = Vector{T}(undef, p)
-    ∇τ  = Vector{T}(undef, 1)
+    ∇σ2  = Vector{T}(undef, 1)
     ∇L  = Matrix{T}(undef, q, q)
     Hβ  = Matrix{T}(undef, p, p)
-    Hτ  = Vector{T}(undef, 1)
+    Hσ2  = Vector{T}(undef, 1)
     HL  = Matrix{T}(undef, q◺, q◺)
+    Hσ2L  = Matrix{T}(undef, q, q)
     # XtX = zeros(T, p, p) # sum_i xi'xi
     # ntotal = 0
     # for i in eachindex(obsvec)
@@ -170,9 +175,11 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     # storage_qq = Matrix{T}(undef, q, q)
     # storage_nq = Matrix{T}(undef, n, q)
     
-    blblmmModel{T}(obsvec, w, p, q, 
-        β, τ, Σ, ΣL, 
-        ∇β, ∇τ, ∇L, Hβ, Hτ, HL) 
+    blblmmModel{T}(
+        obsvec, w, p, q, 
+        β, σ2, Σ, ΣL, 
+        ∇β, ∇σ2, ∇L, Hβ, Hσ2, HL, Hσ2L
+    ) 
         # XtX, storage_qq, storage_nq)
 end
 

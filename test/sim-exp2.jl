@@ -49,30 +49,54 @@ datasizes = ((Int64(1e4), 20), (Int64(1e4), 20))
 #     print("LN_BOBYQA blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
 # end
 
-blb_runtime = Vector{Float64}()
-for (N, reps) in datasizes
-    time0 = time_ns()
-    β̂_blb, Σ̂_blb, τ̂_blb = blb_full_data(
-        string("data/exp2-N-", N, "-rep-", reps, ".csv"), 
+blb_full_data(
+        string("data/exp2-N-1000-rep-20.csv"), 
         @formula(y ~ 1 + x1 + x2 + (1 + x1 | id)); 
         id_name = "id", 
         cat_names = Array{String,1}(), 
-        subset_size = N,
+        subset_size = 1000,
         n_subsets = 1, 
-        n_boots = 10,
+        n_boots = 1,
         MoM_init = false,
         # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, ftol_rel = 1.0e-12, ftol_abs = 1.0e-8, maxeval=10000),
         # solver = Ipopt.IpoptSolver(print_level = 0),
         solver = Ipopt.IpoptSolver(
           print_level = 5, 
           derivative_test = "first-order", 
-          derivative_test_print_all = "yes"
+          derivative_test_print_all = "yes",
+          check_derivatives_for_naninf = "no"
         ),
         verbose = true
     )
-    push!(blb_runtime, (time_ns() - time0)/1e9)
-    print("IPOPT blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
-end
+
+# blb_runtime = Vector{Float64}()
+# for (N, reps) in datasizes
+#     time0 = time_ns()
+#     β̂_blb, Σ̂_blb, τ̂_blb = blb_full_data(
+#         string("data/exp2-N-", N, "-rep-", reps, ".csv"), 
+#         @formula(y ~ 1 + x1 + x2 + (1 + x1 | id)); 
+#         id_name = "id", 
+#         cat_names = Array{String,1}(), 
+#         subset_size = N,
+#         n_subsets = 1, 
+#         n_boots = 1,
+#         MoM_init = false,
+#         # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, ftol_rel = 1.0e-12, ftol_abs = 1.0e-8, maxeval=10000),
+#         # solver = Ipopt.IpoptSolver(print_level = 0),
+#         solver = Ipopt.IpoptSolver(
+#           print_level = 5, 
+#           derivative_test = "first-order", 
+#           derivative_test_print_all = "yes"
+#         #   check_derivatives_for_naninf = "yes"
+#         ),
+#         verbose = true
+#     )
+#     push!(blb_runtime, (time_ns() - time0)/1e9)
+#     print("IPOPT blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
+# end
+
+
+
 # MixedModels + bootstrap
 # B = 10 # number of bootstrap samples
 # rng = MersenneTwister(1234321)

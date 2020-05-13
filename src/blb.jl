@@ -20,7 +20,7 @@ Performs Bag of Little Bootstraps on a subset.
 # Values
 - `β̂`: a matrix of size n_boots-by-p
 - `Σ̂`: a matrix of size n_boots-by-q, which saves the diagonals of Σ̂
-- `τ̂`: a vector of size n_boots
+- `σ̂2`: a vector of size n_boots
 """
 function blb_one_subset(
     # positional arguments
@@ -51,7 +51,7 @@ function blb_one_subset(
     # print("initialized β̂ =", β̂, "\n")
     # print("size of β̂ =", size(β̂), "\n")
     Σ̂ = Matrix{Float64}(undef, n_boots, q) # only save the diagonals
-    τ̂ = zeros(0)
+    σ̂2 = zeros(0)
 
     # β̂ = [Vector{Float64}(undef, p) for i = 1:n_boots]
     # # If we use fill(Vector{Float64}(undef, p), s*r), then all elements of this vector
@@ -73,33 +73,33 @@ function blb_one_subset(
     # Initialize arrays for storing subset estimates
     β_b = similar(m.β)
     Σ_b = similar(m.Σ)
-    τ_b = similar(m.τ)
+    σ2_b = similar(m.σ2)
     
     # # Testing MoM initialization
     # print("Initialize with MoM and print results\n")
     # init_MoM!(m)
     # print("MoM m.β = ", m.β, "\n")
-    # print("MoM m.τ[1] = ", m.τ[1], "\n")
+    # print("MoM m.σ2[1] = ", m.σ2[1], "\n")
     # print("MoM m.Σ = ", m.Σ, "\n\n\n")
     # MixedModels.fit!(lmm)
     # copyto!(m.β, lmm.β)
-    # m.τ[1] = 1 / (lmm.σ^2)
+    # m.σ2[1] = 1 / (lmm.σ^2)
     # m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) 
     # print("Initialize with LMM and print results\n")
     # print("LMM m.β = ", m.β, "\n")
-    # print("LMM m.τ[1] = ", m.τ[1], "\n")
+    # print("LMM m.σ2[1] = ", m.σ2[1], "\n")
     # print("LMM m.Σ = ", m.Σ, "\n\n\n")
 
     # Initalize parameters
     if MoM_init 
         # Method of Moments initialization
-        init_MoM!(m) # This updates β, τ and Σ
+        init_MoM!(m) # This updates β, σ2 and Σ
     else
         # use MixedModels.jl to initialize
         # fit model
         MixedModels.fit!(lmm)
         copyto!(m.β, lmm.β)
-        m.τ[1] = 1 / (lmm.σ^2)
+        m.σ2[1] = 1 / (lmm.σ^2)
         extract_Σ!(m.Σ, lmm) 
         # print("m.Σ", m.Σ, "\n")
         # m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) # initialize Σ
@@ -107,7 +107,7 @@ function blb_one_subset(
     
     # print("After initilization,\n")
     # print("m.β = ", m.β, "\n")
-    # print("m.τ[1] = ", m.τ[1], "\n")
+    # print("m.σ2[1] = ", m.σ2[1], "\n")
     # print("m.Σ = ", m.Σ, "\n")
     
     # Fit LMM using the subsample and get parameter estimates
@@ -115,21 +115,21 @@ function blb_one_subset(
     # will remove this later because this should be exactly the same as MixedModels.fit!
     copyto!(β_b, m.β)
     copyto!(Σ_b, m.Σ)
-    copyto!(τ_b, m.τ)
+    copyto!(σ2_b, m.σ2)
     # print("finished fitting on the subset \n")
     # print("β_b = ", β_b, "\n")
     # print("Σ_b = ", Σ_b, "\n")
 
     # print("After fitting on the subset,\n")
     # print("m.β = ", m.β, "\n")
-    # print("m.τ[1] = ", m.τ[1], "\n")
+    # print("m.σ2[1] = ", m.σ2[1], "\n")
     # print("m.Σ = ", m.Σ, "\n")
 
     
     ns = zeros(b) # Initialize an array for storing multinomial counts
     re_storage = zeros(q) # for storing random effects
     re_dist = MvNormal(zeros(q), Σ_b) # dist of random effects
-    err_dist = Normal(T(0), sqrt(1 / τ_b[1]))
+    err_dist = Normal(T(0), sqrt(1 / σ2_b[1]))
     mult_prob = ones(b) / b
     mult_dist = Multinomial(N, mult_prob)
     
@@ -169,7 +169,7 @@ function blb_one_subset(
         
         # print("Inside bootstrap, before fitting \n")
         # print("m.β = ", m.β, "\n")
-        # print("m.τ[1] = ", m.τ[1], "\n")
+        # print("m.σ2[1] = ", m.σ2[1], "\n")
         # print("m.Σ = ", m.Σ, "\n")
 
         # print("before fit!(),", loglikelihood!(m, false, false), "\n")
@@ -178,25 +178,25 @@ function blb_one_subset(
         
         # print("Inside bootstrap, after fitting\n")
         # print("m.β = ", m.β, "\n")
-        # print("m.τ[1] = ", m.τ[1], "\n")
+        # print("m.σ2[1] = ", m.σ2[1], "\n")
         # print("m.Σ = ", m.Σ, "\n")
 
         # extract estimates
         β̂[k, :] .= m.β 
         # if the assignment is for certain rows of a matrix, then ".=" works fine and we don't need copyto()
         Σ̂[k, :] .= diag(m.Σ)
-        push!(τ̂, m.τ[1])
+        push!(σ̂2, m.σ2[1])
 
         # reset model parameter to subset estimates because 
         # using the bootstrap estimates from each iteration may be unstable.
         copyto!(m.β, β_b)
         copyto!(m.Σ, Σ_b)
-        copyto!(m.τ, τ_b)
-        # m.τ[1] = τ_b[1]
+        copyto!(m.σ2, σ2_b)
+        # m.σ2[1] = σ2_b[1]
         # push!(bootstrap_runtime, (time_ns() - time0)/1e9)
         # print("bootstrap_runtime = ", bootstrap_runtime, "\n")
     end
-    return β̂, Σ̂, τ̂
+    return β̂, Σ̂, σ̂2
 end
 
 
@@ -223,7 +223,7 @@ end
 # # Values
 # - `β̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-p)
 # - `Σ̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-q, only saves the diagonals of Σ̂)
-# - `τ̂`: a vector (of size n_subsets) of vectors (of size n_boots)
+# - `σ2̂`: a vector (of size n_subsets) of vectors (of size n_boots)
 # """
 
 # function blb_full_data(
@@ -250,7 +250,7 @@ end
 #     # !! maybe use three dimensional arrays to avoid ugly subsetting    
 #     β̂ = [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
 #     Σ̂ = [Matrix{Float64}(undef, q, q) for i = 1:(n_subsets * subset_size)]
-#     τ̂ = zeros(0)
+#     σ2̂ = zeros(0)
 
 #     blb_id = fill(0, subset_size)
     
@@ -264,7 +264,7 @@ end
 
 #         β̂[((j-1) * n_boots + 1):(j * n_boots)], 
 #         Σ̂[((j-1) * n_boots + 1):(j * n_boots)], 
-#         τ̂[((j-1) * n_boots + 1):(j * n_boots)] = 
+#         σ2̂[((j-1) * n_boots + 1):(j * n_boots)] = 
 #         blb_one_subset(
 #             # need to implement
 #             id[id .== blb_id],
@@ -274,7 +274,7 @@ end
 #             verbose = verbose
 #         )
 #     end
-#     return β̂, Σ̂, τ̂
+#     return β̂, Σ̂, σ2̂
 # end
 
 
@@ -300,7 +300,7 @@ Performs Bag of Little Bootstraps on the full dataset. This interface is intende
 # Values
 - `β̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-p)
 - `Σ̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-q, only saves the diagonals of Σ̂)
-- `τ̂`: a vector (of size n_subsets) of vectors (of size n_boots)
+- `σ̂2`: a vector (of size n_subsets) of vectors (of size n_boots)
 """
 function blb_full_data(
     # positional arguments
@@ -348,7 +348,7 @@ function blb_full_data(
     β̂ = Vector{Matrix{Float64}}(undef, n_subsets)
     # Previous initialization: [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
     Σ̂ = Vector{Matrix{Float64}}(undef, n_subsets) 
-    τ̂ = Vector{Vector{Float64}}(undef, n_subsets) 
+    σ̂2 = Vector{Vector{Float64}}(undef, n_subsets) 
     
     # Load the id column
     id = JuliaDB.select(ftable, Symbol(id_name))
@@ -407,7 +407,7 @@ function blb_full_data(
 
         # print("m.X", m.X, "\n")
         # return from blb_one_subset(), a matrix
-        β̂[j], Σ̂[j], τ̂[j] = blb_one_subset(
+        β̂[j], Σ̂[j], σ̂2[j] = blb_one_subset(
             lmm,
             lmm.y, 
             lmm.X, 
@@ -428,7 +428,7 @@ function blb_full_data(
         # j += 1
         # timer[j] = time_ns()
     end
-    return β̂, Σ̂, τ̂
+    return β̂, Σ̂, σ̂2
 end
 
 
