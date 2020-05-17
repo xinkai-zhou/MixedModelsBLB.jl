@@ -221,12 +221,17 @@ function loglikelihood!(
     if needhess
         obs.Hβ .= obs.X' * Ωinv * obs.X
         obs.Hσ2[1] = tr(Ωinv * Ωinv)
-        obs.Hσ2[1] /= -2  
+        obs.Hσ2[1] /= 2  
         A = obs.Z' * Ωinv * obs.Z 
         B = A * ΣL
         C = ΣL' * B
-        obs.HL .= -Ct_At_kron_A_KC(B) + 3 * Ct_A_kron_B_C(C, A)
-        obs.Hσ2L .= ΣL' * obs.Z' * Ωinv * Ωinv * obs.Z
+        # Kqq = commutation(q, q)
+        # HLtemp = kron(C, A) + kron(B', B) * Kqq 
+        D = [1 0 0; 0 1 0; 0 0 0; 0 0 1] 
+        # D is the copy matrix with the third row replaced by 0
+        # obs.HL .= D' * HLtemp * D
+        obs.HL .= Ct_A_kron_B_C(C, A) + Ct_At_kron_A_KC(B)
+        obs.Hσ2L .= vec(vec(obs.Z' * Ωinv * Ωinv * obs.Z * ΣL)' * D)
     #     # wrt β
     #     # Currently, storage_qp = chol^{-1} L'Z'X.
     #     copy!(obs.Hβ, obs.xtx)
@@ -296,7 +301,7 @@ function loglikelihood!(
         fill!(m.Hβ, 0)
         fill!(m.Hσ2, 0)
         fill!(m.HL, 0)
-        fill!(m.Hσ2, 0)
+        fill!(m.Hσ2L, 0)
     end
     # print("m.Σ=", m.Σ, "\n")
     # print("m.σ2=", m.σ2, "\n")
@@ -322,14 +327,15 @@ function loglikelihood!(
     # print("Before right mul, m.∇L = ", m.∇L, "\n")
     needgrad && BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
 
+
     # print("m.∇β = ", m.∇β, "\n")
     # print("m.∇σ2 = ", m.∇σ2, "\n")
     # print("m.∇L = ", m.∇L, "\n")
     # print("logl = ", logl, "\n")
 
     # print("m.Hβ = ", m.Hβ, "\n")
-    # print("m.Hσ2 = ", m.Hσ2, "\n")
     # print("m.HL = ", m.HL, "\n")
+    # print("m.Hσ2L = ", m.Hσ2L, "\n")
 
     logl
 end
@@ -513,7 +519,7 @@ MathProgBase.eval_jac_g(m::blblmmModel, J, par) = nothing
 function MathProgBase.hesslag_structure(m::blblmmModel)
     # Get the linear indices of the upper-triangular of the non-zero blocks
     npar = ◺(m.p) + 1 + ◺(m.q) + ◺(◺(m.q))
-    #       ββ      σ2σ2  σ2L       LL
+    #       ββ    σ2σ2  σ2vech(L)   vech(L)vech(L) 
     arr1 = Vector{Int}(undef, npar)
     arr2 = Vector{Int}(undef, npar)
     idx = 1
@@ -529,7 +535,7 @@ function MathProgBase.hesslag_structure(m::blblmmModel)
     arr1[idx] = m.p + 1
     arr2[idx] = m.p + 1
     idx += 1
-    # HL
+    # HL, take the upper triangle
     for j in (m.p+2):(m.p + 1 + ◺(m.q))
         for i in (m.p+2):j
             arr1[idx] = i
@@ -548,10 +554,10 @@ end
 
 """
     ◺(n::Integer)
-Get the indices of the diagonal elements of a lower triangular matrix.
+Get the indices of the diagonal elements of a n x n lower triangular matrix.
 """
 function diag_idx(n::Integer)
-    idx = zeros(n)
+    idx = zeros(Int64, n)
     idx[1] = 1
     for i in 2:n
         idx[i] = idx[i-1] + (n - (i-2))
@@ -567,6 +573,8 @@ function MathProgBase.eval_hesslag(
     μ::Vector{T}) where {T}    
     # l, q◺ = m.l, ◺(m.q)
     optimpar_to_modelpar!(m, par)
+    # Do we need to evaluate logl here? Since hessian is always evaluated 
+    # after the gradient, can we just evaluate logl once in the gradient step?
     loglikelihood!(m, true, true, false)
     idx = 1
     @inbounds for j in 1:m.p, i in 1:j
@@ -574,42 +582,33 @@ function MathProgBase.eval_hesslag(
         idx += 1
     end
     # hessian wrt log(σ2)
-    # old code: H[idx] = m.Hσ2[1]
     H[idx] = m.Hσ2[1] * m.σ2[1]^2
     idx += 1
     
-    # Hessian wrt diagonal: log(ΣL[j,j]), and off-diagonal: ΣL[i,j]
-    # diagidx = diag_idx(m.q)
-    # for (di, j) in enumerate(diagidx)
-    #     m.HL[di, :] = m.HL[di, :] * m.ΣL[j, j]
-    #     m.HL[:, di] = m.HL[:, di] * m.ΣL[j, j]
-    #     m.HL[di, di] += m.∇L[j, j]
-    # end
-    m.HL[1, :] = m.HL[1, :] * m.ΣL[1, 1]
-    m.HL[:, 1] = m.HL[:, 1] * m.ΣL[1, 1]
-    # m.HL[1, 1] += m.∇L[1, 1] * m.ΣL[1, 1]
-    m.HL[3, :] = m.HL[3, :] * m.ΣL[2, 2]
-    m.HL[:, 3] = m.HL[:, 3] * m.ΣL[2, 2]
-    # m.HL[3, 3] += m.∇L[2, 2] * m.ΣL[2, 2]
-    @inbounds for j in 1:◺(m.q)
+    # Since we took log of the diagonal elements, log(ΣL[j,j])
+    # we need to do scaling as follows
+    diagidx = diag_idx(m.q)
+    for (iter, icontent) in enumerate(diagidx)
         # On the diagonal we have hessian wrt log(ΣL[j,j])
-        H[idx] = m.HL[j, j]
-        idx += 1
-        for i in (j+1):◺(m.q)
-            H[idx] = m.HL[i, j] 
-            idx += 1
-        end
+        m.HL[icontent, :] = m.HL[icontent, :] * m.ΣL[iter, iter]
+        m.HL[:, icontent] = m.HL[:, icontent] * m.ΣL[iter, iter]
+        m.Hσ2L[icontent] = m.Hσ2L[icontent] * m.ΣL[iter, iter]
     end
-    # Hessian cross term
-    @inbounds for j in 1:m.q
-        # On the diagonal, wrt log(σ2) and log(ΣL[j,j])
-        H[idx] = m.Hσ2L[j, j] * m.σ2[1] * m.ΣL[j, j]
+    @inbounds for j in 1:◺(m.q), i in 1:j
+        H[idx] = m.HL[i, j] 
         idx += 1
-        # Off-diagonal, wrt log(σ2) and ΣL[i,j]
-        for i in (j+1):m.q
-            H[idx] = m.Hσ2L[i, j] * m.σ2[1]
-            idx += 1
-        end
+    end
+    @inbounds for j in 1:◺(m.q)
+        H[idx] = m.Hσ2L[j] * m.σ2[1]
+        idx += 1
+        # # On the diagonal, wrt log(σ2) and log(ΣL[j,j]) 
+        # H[idx] = m.Hσ2L[j, j] * m.σ2[1]
+        # idx += 1
+        # # Off-diagonal, wrt log(σ2) and ΣL[i,j]
+        # for i in (j+1):m.q
+        #     H[idx] = m.Hσ2L[i, j] * m.σ2[1]
+        #     idx += 1
+        # end
     end
     lmul!(σ, H)
 end

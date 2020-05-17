@@ -11,12 +11,11 @@ using MixedModels
 using Random
 using StatsModels
 using StatsBase
-using Convex
 using DataFrames
 using CSV
 using InteractiveUtils
-using DelimitedFiles
-using SparseArrays
+using Permutations
+using Ipopt
 
 using LinearAlgebra: BlasReal, copytri!
 import LinearAlgebra: BlasFloat, checksquare
@@ -45,7 +44,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     ∇L::Matrix{T}   # gradient wrt L 
     Hβ::Matrix{T}   # Hessian wrt β
     Hσ2::Vector{T}   # Hessian wrt σ2
-    Hσ2L::Matrix{T}   # Hessian cross term
+    Hσ2L::Vector{T}   # Hessian cross term
     HL::Matrix{T}   # Hessian wrt L
     res::Vector{T}  # residual vector
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
@@ -80,7 +79,7 @@ function blblmmObs(
     ∇L  = Matrix{T}(undef, q, q)
     Hβ  = Matrix{T}(undef, p, p)
     Hσ2  = Vector{T}(undef, 1)
-    Hσ2L  = Matrix{T}(undef, q, q)
+    Hσ2L  = Vector{T}(undef, q◺)
     HL  = Matrix{T}(undef, q◺, q◺)
     res = Vector{T}(undef, n)
     xtx = transpose(X) * X
@@ -139,7 +138,7 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     Hβ::Matrix{T}   # Hessian from all observations
     Hσ2::Vector{T}
     HL::Matrix{T}
-    Hσ2L::Matrix{T}
+    Hσ2L::Vector{T}
     # XtX::Matrix{T}      # X'X = sum_i Xi'Xi
     # storage_qq::Matrix{T}
     # storage_nq::Matrix{T}
@@ -165,7 +164,7 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     Hβ  = Matrix{T}(undef, p, p)
     Hσ2  = Vector{T}(undef, 1)
     HL  = Matrix{T}(undef, q◺, q◺)
-    Hσ2L  = Matrix{T}(undef, q, q)
+    Hσ2L  = Vector{T}(undef, q◺)
     # XtX = zeros(T, p, p) # sum_i xi'xi
     # ntotal = 0
     # for i in eachindex(obsvec)
