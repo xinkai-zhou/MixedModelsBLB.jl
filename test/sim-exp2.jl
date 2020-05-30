@@ -5,7 +5,7 @@ using MixedModels, Random, Distributions, DataFrames, CSV
 using MixedModelsBLB
 Random.seed!(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
-datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
+# datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
 
 # for (N, reps) in datasizes
 #    # simulate data
@@ -56,17 +56,17 @@ blb_full_data(
         cat_names = Array{String,1}(), 
         subset_size = 1000,
         n_subsets = 1, 
-        n_boots = 1,
-        MoM_init = false,
+        n_boots = 3,
+        LS_init = true,
         # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, ftol_rel = 1.0e-12, ftol_abs = 1.0e-8, maxeval=10000),
-        # solver = Ipopt.IpoptSolver(print_level = 0),
-        solver = Ipopt.IpoptSolver(
-          print_level = 5, 
-          derivative_test = "first-order", 
-          derivative_test_print_all = "yes",
-          check_derivatives_for_naninf = "no"
-        ),
-        verbose = true
+        solver = Ipopt.IpoptSolver(print_level = 5),
+        # solver = Ipopt.IpoptSolver(
+        #   print_level = 5, 
+        #   derivative_test = "second-order", 
+        #   derivative_test_print_all = "yes",
+        #   check_derivatives_for_naninf = "yes"
+        # ),
+        verbose = false
     )
 
 # blb_runtime = Vector{Float64}()

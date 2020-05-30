@@ -1,4 +1,4 @@
-export ◺, commutation, CopyMatrix, kron_axpy!, kr_axpy!, kr, mul!, vech,
+export ◺, diag_idx, commutation, CopyMatrix, kron_axpy!, kr_axpy!, kr, mul!, vech,
     Ct_At_kron_A_KC, Ct_At_kron_A_KC!, 
     Ct_A_kron_B_C, Ct_A_kron_B_C!,
     Ct_A_kr_B, Ct_A_kr_B!
@@ -9,6 +9,19 @@ import LinearAlgebra: mul!
 Triangular number `n * (n + 1) / 2`.
 """
 @inline ◺(n::Integer) = (n * (n + 1)) >> 1
+
+"""
+    diag_idx(n::Integer)
+Get the indices of the diagonal elements of a n x n lower triangular matrix.
+"""
+function diag_idx(n::Integer)
+    idx = zeros(Int64, n)
+    idx[1] = 1
+    for i in 2:n
+        idx[i] = idx[i-1] + (n - (i-2))
+    end
+    return idx
+end
 
 """
     kron_axpy!(A, X, Y)
