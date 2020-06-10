@@ -1,7 +1,7 @@
 
 # Comparing speed
 
-using MixedModels, Random, Distributions, DataFrames, CSV
+using MixedModels, Random, Distributions, DataFrames, CSV, JuliaDB
 using MixedModelsBLB
 Random.seed!(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
@@ -49,17 +49,17 @@ Random.seed!(1)
 #     print("LN_BOBYQA blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
 # end
 
-blb_full_data(
-        string("data/exp2-N-1000-rep-20.csv"), 
-        @formula(y ~ 1 + x1 + x2 + (1 + x1 | id)); 
+dat = loadtable("data/exp2-N-1000-rep-20.csv")
+result = blb_full_data(
+        dat;
+        feformula = @formula(y ~ 1 + x1 + x2),
+        reformula = @formula(y ~ 1 + x1),
         id_name = "id", 
         cat_names = Array{String,1}(), 
         subset_size = 1000,
         n_subsets = 1, 
         n_boots = 3,
-        LS_init = true,
-        # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, ftol_rel = 1.0e-12, ftol_abs = 1.0e-8, maxeval=10000),
-        solver = Ipopt.IpoptSolver(print_level = 5),
+        solver = Ipopt.IpoptSolver(print_level = 1),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
         #   derivative_test = "second-order", 
@@ -67,8 +67,8 @@ blb_full_data(
         #   check_derivatives_for_naninf = "yes"
         # ),
         verbose = false
-    )
-
+        )
+print(result)
 # blb_runtime = Vector{Float64}()
 # for (N, reps) in datasizes
 #     time0 = time_ns()

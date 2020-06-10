@@ -14,6 +14,8 @@ using CSV
 using InteractiveUtils
 using Permutations
 using LinearAlgebra
+using Tables
+using TableOperations
 
 using LinearAlgebra: BlasReal, copytri!
 import LinearAlgebra: BlasFloat, checksquare
@@ -23,13 +25,15 @@ import LinearAlgebra: BlasFloat, checksquare
 @reexport using MixedModels
 
 export blblmmObs, blblmmModel
-export fit!, fitted, loglikelihood!, update_res!, update_w!, extract_Σ!
-export blb_one_subset, blb_full_data
+export update_w!, extract_Σ!, init_ls!, fit!, loglikelihood! # lmm.jl
+export SubsetEstimates, blbEstimates, save_bootstrap_result!, blb_one_subset, blb_full_data # blb.jl
+export Simulator, simulate! # simulate.jl
 
 """
 blblmmObs
-blblmmObs(y, X, Z)
-A realization of BLB linear mixed model data instance.
+
+BLB linear mixed model observation type. Contains data from
+a single cluster, working arrays and so on.
 """
 struct blblmmObs{T <: LinearAlgebra.BlasReal}
     # data
@@ -63,7 +67,17 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     storage_qp::Matrix{T}
 end
 
+"""
+    blblmmObs(y, X, Z)
 
+The constructor for the blblmmObs type.
+
+# Positional arguments 
+- `y`: response vector
+- `X`: design matrix for fixed effects
+- `Z`: design matrix for random effects.
+
+"""
 function blblmmObs(
     y::Vector{T},
     X::Matrix{T},
@@ -108,17 +122,20 @@ end
 
 """
 blblmmModel
-blblmmModel
-BLB linear mixed model, which contains a vector of 
+
+BLB linear mixed model type, which contains a vector of 
 `blblmmObs` as data, model parameters, and working arrays.
 """
 struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     # data
     data::Vector{blblmmObs{T}}
-    w::Vector{T}      # a vector of weights from bootstraping the subset
-    # ntotal::Int     # total number of clusters
+    fenames::Vector{String} # a vector of the fixed effect variable names
+    renames::Vector{String} # a vector of the random effect variable names
+    N::Int    # total number of unique IDs (individuals) in the full data set
+    b::Int    # total number of unique IDs (individuals) in the subset
     p::Int            # number of fixed effect parameters
     q::Int            # number of random effect parameters
+    w::Vector{Int}      # a vector of weights from bootstraping the subset
     # model parameters
     β::Vector{T}     # fixed effects
     σ²::Vector{T}    # error variance
@@ -141,15 +158,30 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     diagidx::Vector{Int64}
 end
 
-function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
-    n, p, q = length(obsvec), size(obsvec[1].X, 2), size(obsvec[1].Z, 2)
+
+"""
+    blblmmModel(obsvec)
+
+The constructor for  the blblmmModel type.
+
+# Positional arguments 
+- `obsvec`: a vector of type blblmmObs
+
+"""
+function blblmmModel(
+    obsvec::Vector{blblmmObs{T}},
+    fenames::Vector{String},
+    renames::Vector{String},
+    N::Int64
+    ) where T <: BlasReal
+    b, p, q = length(obsvec), size(obsvec[1].X, 2), size(obsvec[1].Z, 2)
     q◺ = ◺(q)
     npar = p + 1 + (q * (q + 1)) >> 1
     # since X includes a column of 1, p is the number of mean parameters
     # the cholesky factor for the qxq random effect mx has (q * (q + 1))/2 values
     # the arithmetic shift right operation has the effect of division by 2^n, here n = 1
     # then there is the error variance
-    w      = ones(T, n) # initialize weights to be 1
+    w      = ones(Int64, b) # initialize weights to be 1
     β      = Vector{T}(undef, p)
     σ²     = Vector{T}(undef, 1)
     Σ      = Matrix{T}(undef, q, q)
@@ -168,7 +200,8 @@ function blblmmModel(obsvec::Vector{blblmmObs{T}}) where T <: BlasReal
     diagidx = diag_idx(q)
     # ntotal = 0
     blblmmModel{T}(
-        obsvec, w, p, q, 
+        obsvec, fenames, renames, 
+        N, b, p, q, w,
         β, σ², Σ, ΣL, 
         ∇β, ∇σ², ∇L, Hββ, Hσ²σ², Hσ²L, HLL,
         xtx, xty, ztz2, ztr2, diagidx
@@ -178,6 +211,7 @@ end
 
 include("lmm.jl")
 include("blb.jl")
+include("simulate.jl")
 include("multivariate_calculus.jl")
 
 end # module

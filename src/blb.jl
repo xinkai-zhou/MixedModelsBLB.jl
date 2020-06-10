@@ -1,286 +1,321 @@
 
 
 """
-    blb_one_subset(lmm, y, X, Z, id, N; n_boots, solver, LS_init, verbose)
+SubsetEstimates
+BLB linear mixed model estimates from one subset
+"""
+struct SubsetEstimates{T <: LinearAlgebra.BlasReal}
+    # blb parameter
+    n_boots::Int64
+    # dimension of parameter estimates, for pre-allocation
+    p::Int64
+    q::Int64
+    # blb results
+    βs::Vector{Vector{T}}
+    Σs::Vector{Matrix{T}}
+    σ²s::Vector{T}
+end
+
+# constructor
+function SubsetEstimates(n_boots::Int64, p::Int64, q::Int64)
+    βs  = [Vector{Float64}(undef,  p) for _ in 1:n_boots] #Vector{Vector{Float64}}()
+    Σs  = [Matrix{Float64}(undef, q, q) for _ in 1:n_boots] #Vector{Matrix{Float64}}()
+    σ²s = Vector{Float64}(undef, n_boots)
+    SubsetEstimates(n_boots, p, q, βs, Σs, σ²s)
+end
+
+"""
+blbEstimates
+BLB linear mixed model estimates, which contains 
+blb parameters and a vector of `SubsetEstimates`
+"""
+struct blbEstimates{T <: LinearAlgebra.BlasReal}
+    # blb parameters
+    n_subsets::Int64
+    n_boots::Int64
+    # subset estimates from all subsets
+    all_estimates::Vector{SubsetEstimates{T}}
+end
+
+"""
+    save_bootstrap_result!(subset_estimates, β, Σ, σ²)
+
+Save the result from one bootstrap iteration to subset_estimates
+
+# Positional arguments 
+- `subset_estimates`: an object of the SubsetEstimates type
+- `i`: update the ith element of βs, Σs and σ²s
+- `β`: parameter estimates for fixed effects
+- `Σ`: the covariance matrix of variance components
+- `σ²`: estimate of error variance 
+"""
+function save_bootstrap_result!(
+    subset_estimates::SubsetEstimates{T},
+    i::Int64,
+    β::Vector{T},
+    Σ::Matrix{T},
+    σ²::T
+    ) where T <: BlasReal
+    subset_estimates.βs[i] = β
+    subset_estimates.Σs[i] = Σ
+    subset_estimates.σ²s[i] = σ²
+end
+
+
+"""
+    blb_one_subset(m; n_boots, solver, verbose)
 
 Performs Bag of Little Bootstraps on a subset. 
 
 # Positional arguments 
-- `y`: response vector
-- `X`: design matrix for fixed effects
-- `Z`: design matrix for random effects
-- `id`: cluster identifier
-- `N`: total number of clusters
+- `m`: an object of the blblmmModel type
 
 # Keyword arguments
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
-- `verbose`: print extra information ???
+- `verbose`: Bool, whether to print bootstrap progress (percentage completion)
 
 # Values
-- `β̂`: a matrix of size n_boots-by-p
-- `Σ̂`: a matrix of size n_boots-by-q, which saves the diagonals of Σ̂
-- `σ̂²`: a vector of size n_boots
+- `subset_estimates`: an object of the SubsetEstimates type
 """
 function blb_one_subset(
     # positional arguments
-    lmm::LinearMixedModel{Float64},
-    y::Vector{T}, 
-    X::Matrix{T}, # includes the intercept
-    Z::Matrix{T}, 
-    id::Vector{Int64},
-    N::Int64;
+    m::blblmmModel{T};
     # keyword arguments
     n_boots::Int64 = 1000,
     solver = Ipopt.IpoptSolver(),
-    LS_init = false,
     verbose::Bool = false
     ) where T <: BlasReal 
 
-    b, p, q = length(Set(id)), size(X, 2), size(Z, 2)
+    # Initalize model parameters
+    init_ls!(m)
     
-    # Initialize arrays for storing the results
-    β̂ = Matrix{Float64}(undef, n_boots, p)
-    Σ̂ = Matrix{Float64}(undef, n_boots, q)
-    σ̂² = zeros(0)
-
-    # Initialize a vector of the blblmmObs objects
-    obs = Vector{blblmmObs{Float64}}(undef, b)
-    @inbounds @views for (i, grp) in enumerate(unique(id))
-        gidx = id .== grp
-        yi = Float64.(y[gidx])
-        Xi = Float64.(X[gidx, :])
-        Zi = Float64.(Z[gidx, :])
-        obs[i] = blblmmObs(yi, Xi, Zi)
-    end
-    # Construct the blblmmModel type
-    m = blblmmModel(obs) 
-    
-    # Initialize arrays for storing subset estimates
-    β_b = similar(m.β)
-    Σ_b = similar(m.Σ)
-    σ²_b = similar(m.σ²)
-
-    # Initalize parameters
-    if LS_init 
-        # LS initialization
-        init_ls!(m) # This updates β, σ² and Σ
-    else
-        # use MixedModels.jl to initialize
-        MixedModels.fit!(lmm)
-        copyto!(m.β, lmm.β)
-        m.σ²[1] = lmm.σ^2
-        extract_Σ!(m.Σ, lmm)
-        # Start with truth
-        # copyto!(m.β, [1. 1 1])
-        # m.σ²[1] = 1
-        # copyto!(m.Σ, [1. 0; 0 1]) 
-        # print("m.Σ", m.Σ, "\n")
-        # m.Σ .= Diagonal([i^2 for i in lmm.sigmas[1]]) # initialize Σ
-    end
-    
-    # Fit LMM using the subsample and get parameter estimates
+    # Fit LMM on the subset
     fit!(m; solver = solver) 
-    # Save subset estimates for parametric bootstrapping
-    copy!(β_b, m.β)
-    copy!(Σ_b, m.Σ)
-    copy!(σ²_b, m.σ²)
 
-    # Distributions and storages for bootstrapping
-    ns = zeros(b) # Initialize an array for storing multinomial counts
-    re_storage = zeros(q) # for storing random effects
-    re_dist = MvNormal(zeros(q), Σ_b) # dist of random effects
-    err_dist = Normal(T(0), sqrt(σ²_b[1]))
-    mult_prob = ones(b) / b
-    mult_dist = Multinomial(N, mult_prob)
-    
-    # bootstrap_runtime = Vector{Float64}()
+    # Initalize an instance of SubsetEstimates type for storing results
+    subset_estimates = SubsetEstimates(n_boots, m.p, m.q)
+
+    # construct the simulator type
+    simulator = Simulator(m)
+
     # Bootstrapping
     @inbounds for k = 1:n_boots
         verbose && print("Bootstrap iteration ", k, "\n")
-        # Parametric bootstrapping
-        @inbounds @views for bidx = 1:b
-            rand!(err_dist, m.data[bidx].y) # y = standard normal error
-            BLAS.gemv!('N', T(1), m.data[bidx].X, β_b, T(1), m.data[bidx].y) # y = Xβ + error
-            rand!(re_dist, re_storage) # simulating random effects
-            BLAS.gemv!('N', T(1), m.data[bidx].Z, re_storage, T(1), m.data[bidx].y) # y = Xβ + Zα + error
-        end
+
+        # Parametric bootstrapping. Updates m.data[i].y for all i
+        simulate!(m, simulator)
 
         # Get weights by drawing N i.i.d. samples from multinomial
-        rand!(mult_dist, ns) 
-
+        rand!(simulator.mult_dist, simulator.ns) 
+        # print("simulator.ns[1:10] = ", simulator.ns[1:10], "\n")
+        
         # Update weights in blblmmModel
-        update_w!(m, ns)
+        update_w!(m, simulator.ns)
         
         # Fit model on the bootstrap sample
         fit!(m; solver = solver)
+        # print("m.β = ", m.β, "\n")
+        # print("m.Σ = ", m.Σ, "\n")
         
-        # extract estimates
-        β̂[k, :] .= m.β 
-        # if the assignment is for certain rows of a matrix, then ".=" works fine and we don't need copyto()
-        Σ̂[k, :] .= diag(m.Σ)
-        push!(σ̂², m.σ²[1])
+        # Save estimates
+        save_bootstrap_result!(subset_estimates, k, m.β, m.Σ, m.σ²[1])
 
-        # Reset model parameter to subset estimates because 
+        # Reset model parameter to subset estimates as initial parameters because
         # using the bootstrap estimates from each iteration may be unstable.
-        copy!(m.β, β_b)
-        copy!(m.Σ, Σ_b)
-        copy!(m.σ², σ²_b)
+        copyto!(m.β, simulator.β_subset)
+        copyto!(m.Σ, simulator.Σ_subset)
+        copyto!(m.σ², simulator.σ²_subset)
     end
-    return β̂, Σ̂, σ̂²
+    return subset_estimates
 end
 
 
+"""
+    blblmmobs(datatable)
+
+Construct the blblmmObs type
+
+# Positional arguments 
+- `data_obs`: a table object that is compatible with Tables.jl
+- `feformula`: the formula for the fixed effects
+- `reformula`: the formula for the fixed effects
+
+# Values
+- `cat_levels`: a dictionary that contains the number of levels of each categorical variable.
+"""
+function blblmmobs(data_obs::Union{Tables.AbstractColumns, DataFrames.DataFrame}, feformula::FormulaTerm, reformula::FormulaTerm)
+    y, X = StatsModels.modelcols(feformula, data_obs)
+    Z = StatsModels.modelmatrix(reformula, data_obs)
+    return blblmmObs(y, X, Z)
+end
+blblmmobs(feformula::FormulaTerm, reformula::FormulaTerm) = data_obs -> blblmmobs(data_obs, feformula, reformula)
 
 """
-    blb_full_data(file, f; id_name, cat_names, subset_size, n_subsets, n_boots, LS_init, solver, verbose)
+    count_levels(data_columns, cat_names)
+
+Count the number of levels of each categorical variable.
+
+# Positional arguments 
+- `data_columns`: an object of the AbstractColumns type
+- `cat_names`: a character vector of the names of the categorical variables
+
+# Values
+- `cat_levels`: a dictionary that contains the number of levels of each categorical variable.
+"""
+function count_levels(data_columns::Union{Tables.AbstractColumns, DataFrames.DataFrame}, cat_names::Vector{String})
+    cat_levels = Dict{String, Int64}()
+    @inbounds for cat_name in cat_names
+        cat_levels[cat_name] = length(countmap(Tables.getcolumn(data_columns, Symbol(cat_name))))
+    end
+    return cat_levels
+end
+count_levels(cat_names::Vector{String}) = data_columns -> count_levels(data_columns, cat_names)
+
+"""
+    subsetting!(subset_id, data_columns, id_name, unique_id, cat_names, cat_levels)
+
+Draw a subset from the full dataset.
+
+# Positional arguments 
+- `subset_id`: a vector for storing the IDs of the subset
+- `data_columns`: an object of the AbstractColumns type, or a DataFrame
+- `unique_id`: a vector of the unique ID in the full data set
+- `cat_names`: a character vector of the names of the categorical variables
+- `cat_levels`: a dictionary that contains the number of levels of each categorical variable
+"""
+function subsetting!(
+    subset_id::Vector,
+    # data_columns::Union{Tables.AbstractColumns, DataFrame},
+    data_columns,
+    id_name::Symbol,
+    unique_id::Vector,
+    cat_names::Vector{String},
+    cat_levels::Dict
+    )
+    good_subset = false
+    while !good_subset
+        # Sample from the full dataset
+        sample!(unique_id, subset_id; replace = false)
+        # subset_indices = LinearIndices(id)[findall(in(blb_id_unique), id)]
+        if length(cat_names) > 0
+            cat_levels_subset = data_columns |> 
+                TableOperations.filter(x -> Tables.getcolumn(x, Symbol(id_name)) .∈ Ref(Set(subset_id))) |> 
+                Tables.columns |> 
+                count_levels(cat_names)
+            # If the subset levels do not match the full dataset levels, 
+            # skip the current iteration and take another subset
+            if cat_levels_subset == cat_levels
+                good_subset = true
+            end
+        else 
+            good_subset = true
+        end
+    end
+end
+
+
+"""
+    blb_full_data(file, f; id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose)
 
 Performs Bag of Little Bootstraps on the full dataset. This interface is intended for larger datasets that cannot fit in memory.
 
 # Positional arguments 
-- `file`: file/folder path.
-- `f`: model formula.
+- `datatable`: a data table type that is compatible with Tables.jl
 
 # Keyword arguments
+- `feformula`: model formula for the fixed effects.
+- `reformula`: model formula for the random effects.
 - `id_name`: name of the cluster identifier variable. String.
 - `cat_names`: a vector of the names of the categorical variables.
 - `subset_size`: number of clusters in the subset. Default to the square root of the total number of clusters.
 - `n_subsets`: number of subsets.
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
-- `verbose`: 
+- `verbose`: Bool, whether to print bootstrap progress (percentage completion)
 
 # Values
-- `β̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-p)
-- `Σ̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-q, only saves the diagonals of Σ̂)
-- `σ̂²`: a vector (of size n_subsets) of vectors (of size n_boots)
+- `result`: an object of the blbEstimates type
 """
 function blb_full_data(
     # positional arguments
-    file::String,
-    f::FormulaTerm;
+    datatable;
     # keyword arguments
+    feformula::FormulaTerm,
+    reformula::FormulaTerm,
     id_name::String,
-    cat_names::Vector{String},
+    cat_names::Vector{String} = Vector{String}(),
     subset_size::Int64,
     n_subsets::Int64 = 10,
     n_boots::Int64 = 1000,
-    LS_init = false,
     solver = Ipopt.IpoptSolver(),
     verbose::Bool = false
-    ) where T <: BlasReal 
-
-    # Get variable names from the formula
-    lhs_name = [string(x) for x in StatsModels.termvars(f.lhs)]
-    rhs_name = [string(x) for x in StatsModels.termvars(f.rhs)]
-    var_name = Tuple(x for x in vcat(lhs_name, rhs_name)) # var names need to be in tuples for using select()
-    
-    # Connect to the dataset/folder
-    ftable = JuliaDB.loadtable(
-        file, 
-        datacols = filter(x -> x != nothing, vcat(lhs_name, rhs_name))
     )
 
-    # By chance, certain factors may not show up in a subset. 
-    # To make sure this does not happen, we first 
-    # count the number of levels of the categorical variables in the full data,
-    # then for each sampled subset, we check whether the number of levels match. 
-    # If they do, great. Otherwise, the subset is resampled.
+    typeof(id_name) <: String && (id_name = Symbol(id_name))
+
+    # apply df-wide schema
+    feformula = apply_schema(feformula, schema(feformula, datatable))
+    reformula = apply_schema(reformula, schema(reformula, datatable))
+    
+    fenames = coefnames(feformula)[2]
+    renames = coefnames(reformula)[2]
+
+    # By chance, some factors of a categorical variable may not show up in a subset. 
+    # To make sure this does not happen, we
+    # 1. count the number of levels of each categorical variable in the full data;
+    # 2. for each sampled subset, we check whether the number of levels match. 
+    # If they do not match, the subset is resampled.
+    datatable_cols = Tables.columns(datatable)
     if length(cat_names) > 0
-        cat_levels = Dict{String, Int32}()
-        @inbounds for cat_name in cat_names
-            cat_levels[cat_name] = length(unique(JuliaDB.select(ftable, Symbol(cat_name))))
-        end
+        cat_levels = count_levels(datatable_cols, cat_names)
+    else
+        cat_levels = Dict()
     end
-    
 
-    # The size of the parameter vectors can only be decided after creating the LinearMixedModel type, 
-    # because that's when we recode categorical vars.
-    # Initialize arrays for storing the results
-    β̂ = Vector{Matrix{Float64}}(undef, n_subsets)
-    # Previous initialization: [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
-    Σ̂ = Vector{Matrix{Float64}}(undef, n_subsets) 
-    σ̂² = Vector{Vector{Float64}}(undef, n_subsets) 
-    
-    # Load the id column
-    id = JuliaDB.select(ftable, Symbol(id_name))
-    id_unique = unique(id)
-    N = length(id_unique) # number of clusters in the full dataset
+    # Get the unique ids, which will be used for subsetting
+    unique_id = unique(Tables.getcolumn(datatable_cols, id_name))
+    N = length(unique_id) # number of individuals/clusters in the full dataset
     # Initialize an array to store the unique IDs for the subset
-    blb_id_unique = fill(0, subset_size)
+    subset_id = Vector{eltype(unique_id)}(undef, subset_size)
 
-    # timer = zeros(n_subsets+1)
-    # timer[1] = time_ns()
+    # Initialize a vector of SubsetEstimates for storing estimates from subsets
+    all_estimates = Vector{SubsetEstimates{Float64}}(undef, n_subsets)
+
+    # Initialize a vector of the blblmmObs objects
+    # ??? Float64 or some other type?
+    obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
+
     # Threads.@threads for j = 1:n_subsets
     @inbounds for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
-
-        # Count the total number of observations in the subset.
-        # n_obs = 0
-        # for key in blb_id_unique
-        #     n_obs += id_counts[key]
-        # end
-        # intercept = fill(1., n_obs)
-
-        subset_good = false
-        local subset_indices # declare local so that subset_indices is visible after the loop
-        while !subset_good
-            # Sample from the full dataset
-            sample!(id_unique, blb_id_unique; replace = false)
-            subset_indices = LinearIndices(id)[findall(in(blb_id_unique), id)]
-
-            if length(cat_names) > 0
-                # Count the number of levels of the categorical variables
-                cat_levels_subset = Dict{String, Int32}()
-                for cat_name in cat_names
-                    cat_levels_subset[cat_name] = length(unique(JuliaDB.select(ftable[subset_indices, ], Symbol(cat_name))))
-                end
-                # If the subset levels do not match the full dataset levels, 
-                # skip the current iteration and re-draw blb_id_unique
-                if cat_levels_subset == cat_levels
-                    subset_good = true
-                end
-            else 
-                subset_good = true
-            end
+        
+        # Take a subset
+        subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
+        
+        # Construct blblmmObs objects
+        @inbounds for (i, id) in enumerate(subset_id)
+            obsvec[i] = datatable_cols |> 
+                TableOperations.filter(x -> Tables.getcolumn(x, id_name) == id) |> 
+                Tables.columns |> 
+                blblmmobs(feformula, reformula)
         end
-        # Create the LinearMixedModel object using the subset
-        # !!! using @views
-        # m = LinearMixedModel(f, ftable[subset_indices, ])
 
-        # To use LinearMixedModel(), 
-        # we need to transform the id column in ftable to categorical type.
-        # Currently I do this by converting the table to DataFrame.
-        # In later releases of MixedModels.jl, they will no longer require "id"
-        # to be cateogorical. I will change the script then.
-        @views df = DataFrame(ftable[subset_indices, ])
-        categorical!(df, Symbol("id"))
-        lmm = LinearMixedModel(f, df)
+        # Construct the blblmmModel type
+        m = blblmmModel(obsvec, fenames, renames, N) 
 
-        # print("m.X", m.X, "\n")
-        # return from blb_one_subset(), a matrix
-        β̂[j], Σ̂[j], σ̂²[j] = blb_one_subset(
-            lmm,
-            lmm.y, 
-            lmm.X, 
-            copy(transpose(first(lmm.reterms).z)), 
-            id[subset_indices],
-            N; 
+        # Run BLB on this subset
+        all_estimates[j] = blb_one_subset(
+            m;
             n_boots = n_boots, 
-            LS_init = LS_init,
             solver = solver, 
             verbose = verbose
         )
-        ####
-        # y = select(ftable, Symbol(y_name))[subset_indices, ]
-        # # if fe is missing, X is just intercept, otherwise 
-        # isnothing(fe_name) ? X = intercept : X = hcat(intercept, JuliaDB.select(ftable, map(Symbol, fe_name))[subset_indices, ])
-        # isnothing(re_name) ? Z = intercept : Z = hcat(intercept, JuliaDB.select(ftable, map(Symbol, re_name))[subset_indices, ])
-        ####
-        # j += 1
-        # timer[j] = time_ns()
     end
-    return β̂, Σ̂, σ̂²
+
+    # Create a blbEstimates instance for storing results from all subsets
+    result = blbEstimates{Float64}(n_subsets, n_boots, all_estimates)
+    return result
 end
 
 

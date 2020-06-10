@@ -6,9 +6,9 @@ Update the weight vector `m.w` using `w`.
 """
 function update_w!(
     m::blblmmModel{T}, 
-    w::Vector{T}
+    w::Vector{Int64}
     ) where T <: BlasReal
-    copy!(m.w, w)
+    copyto!(m.w, w)
 end
 
 """
@@ -36,11 +36,11 @@ function init_ls!(m::blblmmModel{T}) where T <: BlasReal
         obs = m.data[i]
         ntotal += length(obs.y)
         # update Xt * res
-        BLAS.gemv!('N', T(-1), obs.xtx, m.β, T(1), copy!(obs.xtr, obs.xty))
+        BLAS.gemv!('N', T(-1), obs.xtx, m.β, T(1), copyto!(obs.xtr, obs.xty))
         # rss of i-th individual
         rss += obs.yty - dot(obs.xty, m.β) - dot(obs.xtr, m.β)
         # update Zi' * res
-        BLAS.gemv!('N', T(-1), obs.ztx, m.β, T(1), copy!(obs.ztr, obs.zty))
+        BLAS.gemv!('N', T(-1), obs.ztx, m.β, T(1), copyto!(obs.ztr, obs.zty))
         # Zi'Zi ⊗ Zi'Zi
         kron_axpy!(obs.ztz, obs.ztz, m.ztz2)
         # Zi'res ⊗ Zi'res
@@ -53,6 +53,7 @@ function init_ls!(m::blblmmModel{T}) where T <: BlasReal
     for j in 2:m.q, i in 1:j-1
         m.ΣL[i, j] = 0
     end
+    mul!(m.Σ, m.ΣL, transpose(m.ΣL))
     m
 end
 
@@ -95,28 +96,17 @@ function loglikelihood!(
     n, p, q = size(obs.X, 1), size(obs.X, 2), size(obs.Z, 2)
     σ²inv = 1 / σ²[1]
 
-    # if needgrad
-    #     fill!(obs.∇β, T(0))
-    #     fill!(obs.∇σ², T(0))
-    #     fill!(obs.∇L, T(0))
-    # end
-    # if needgrad
-    #     fill!(obs.Hββ, T(0))
-    #     fill!(obs.Hσ²σ², T(0))
-    #     fill!(obs.HLL, T(0))
-    #     fill!(obs.Hσ²L, T(0))
-    # end
     ###########
     # objective
     ###########
-    copy!(obs.storage_qq_1, obs.ztz) 
+    copyto!(obs.storage_qq_1, obs.ztz) 
     # storage_qq_1 = L'Z'Z
     BLAS.trmm!('L', 'L', 'T', 'N', T(1), ΣL, obs.storage_qq_1)
-    needgrad && copy!(obs.∇L, obs.storage_qq_1)
+    needgrad && copyto!(obs.∇L, obs.storage_qq_1)
     # storage_qq_1 = L'Z'Z L
     BLAS.trmm!('R', 'L', 'N', 'N', T(1), ΣL, obs.storage_qq_1)
     # storage_qq_2 = L'Z'Z L
-    needgrad && copy!(obs.storage_qq_2, obs.storage_qq_1)
+    needgrad && copyto!(obs.storage_qq_2, obs.storage_qq_1)
     # form σ²I + L'Z'Z L
     @inbounds for i in 1:q
         obs.storage_qq_1[i, i] += σ²[1]
@@ -127,24 +117,25 @@ function loglikelihood!(
     needgrad && BLAS.trsm!('L', 'U', 'T', 'N', T(1), obs.storage_qq_1, obs.∇L)
     if needhess
         # storage_qp = L'Z'X
-        BLAS.trmm!('L', 'L', 'T', 'N', T(1), ΣL, copy!(obs.storage_qp, obs.ztx))
+        BLAS.trmm!('L', 'L', 'T', 'N', T(1), ΣL, copyto!(obs.storage_qp, obs.ztx))
         # storage_qp = chol^{-1} L'Z'X
         BLAS.trsm!('L', 'U', 'T', 'N', T(1), obs.storage_qq_1, obs.storage_qp)
     end
     # calculate rtr as yty - β'xty - β'xtr (reason: we will need xtr in ∇β)
     # first calculate xtr
-    BLAS.gemv!('N', T(-1), obs.xtx, β, T(1), copy!(obs.xtr, obs.xty))
+    BLAS.gemv!('N', T(-1), obs.xtx, β, T(1), copyto!(obs.xtr, obs.xty))
     rtr = obs.yty - dot(β, obs.xty) - dot(β, obs.xtr)
     # ztr = Z'r = -Z'Xβ + Z'y
-    BLAS.gemv!('N', T(-1), obs.ztx, β, T(1), copy!(obs.ztr, obs.zty))
+    BLAS.gemv!('N', T(-1), obs.ztx, β, T(1), copyto!(obs.ztr, obs.zty))
     # storage_q_1 = L'Z'r
-    BLAS.trmv!('L', 'T', 'N', ΣL, copy!(obs.storage_q_1, obs.ztr))
+    BLAS.trmv!('L', 'T', 'N', ΣL, copyto!(obs.storage_q_1, obs.ztr))
     # storage_q_1 = chol^{-1} L'Z'r
     BLAS.trsv!('U', 'T', 'N', obs.storage_qq_1, obs.storage_q_1)
     # calculate the loglikelihood
     logl = n * log(2π) + (n-q) * log(σ²[1])
     @inbounds for i in 1:q
         logl += 2 * log(obs.storage_qq_1[i, i])
+
         # # the diag of chol may be <=0 due to numerical reasons. 
         # # if this happens, set logl to be -Inf.
         # if obs.storage_qq_1[i, i] <= 0
@@ -176,7 +167,7 @@ function loglikelihood!(
         # then calculate storage_q_1 = LM^{-1}L'Z'r
         BLAS.gemv!('N', T(1), obs.storage_qq_1, obs.ztr, T(0), obs.storage_q_1)
         # calculate ∇β
-        BLAS.gemv!('T', T(-1), obs.ztx, obs.storage_q_1, T(1), copy!(obs.∇β, obs.xtr))
+        BLAS.gemv!('T', T(-1), obs.ztx, obs.storage_q_1, T(1), copyto!(obs.∇β, obs.xtr))
         obs.∇β .*= σ²inv
 
         # ∇σ²
@@ -213,14 +204,14 @@ function loglikelihood!(
         BLAS.axpy!(T(-1), obs.ztz, obs.storage_qq_2)
         # storage_qq_2 = -Z'ΩinvZ = -σ²inv * (Z'Z - Z'ZLMinvL'Z'Z)
         lmul!(σ²inv, obs.storage_qq_2)
-        copy!(obs.∇L, obs.storage_qq_2)
+        copyto!(obs.∇L, obs.storage_qq_2)
         if needhess
             # HLL
             fill!(obs.HLL, T(0))
             # let storage_qq_2 = Z'ΩinvZ
             lmul!(T(-1), obs.storage_qq_2)
             LinearAlgebra.copytri!(obs.storage_qq_2, 'U')
-            copy!(obs.storage_qq_1, obs.storage_qq_2)
+            copyto!(obs.storage_qq_1, obs.storage_qq_2)
             # let storage_qq_1 = Z'ΩinvZL
             BLAS.trmm!('R', 'L', 'N', 'N', T(1), ΣL, obs.storage_qq_1)
             Ct_At_kron_A_KC!(obs.HLL, obs.storage_qq_1)
@@ -242,7 +233,7 @@ function loglikelihood!(
     ###########
     if needhess
         # Hββ
-        BLAS.syrk!('U', 'T', T(-1), obs.storage_qp, T(1), copy!(obs.Hββ, obs.xtx))
+        BLAS.syrk!('U', 'T', T(-1), obs.storage_qp, T(1), copyto!(obs.Hββ, obs.xtx))
         lmul!(σ²inv, obs.Hββ)
 
         # Hσ²σ²
