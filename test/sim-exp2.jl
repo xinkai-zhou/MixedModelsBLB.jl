@@ -7,6 +7,21 @@ Random.seed!(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 # datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
 
+reps = 20
+N = 1000
+x1 = rand(Normal(0, 1), reps * N)
+x2 = rand(Normal(0, 3), reps * N)
+rand_slope = zeros(reps * N)
+@views for j in 1:N
+    rand_slope[(reps * (j-1) + 1) : reps * j] = x1[(reps * (j-1) + 1) : reps * j] .* rand(Normal(0, 2), 1)
+end
+y = 1 .+ x1 + x2 + # fixed effects
+    repeat(rand(Normal(0, 1), N), inner = reps) + # random intercept, standard normal
+    rand_slope +
+    rand(Normal(0, 1), reps * N) # error, standard normal
+id = repeat(1:N, inner = reps)
+dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
+
 # for (N, reps) in datasizes
 #    # simulate data
 #    x1 = rand(Normal(0, 1), reps * N)
@@ -49,7 +64,7 @@ Random.seed!(1)
 #     print("LN_BOBYQA blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
 # end
 
-dat = loadtable("data/exp2-N-1000-rep-20.csv")
+# dat = loadtable("data/exp2-N-1000-rep-20.csv")
 result = blb_full_data(
         dat;
         feformula = @formula(y ~ 1 + x1 + x2),
