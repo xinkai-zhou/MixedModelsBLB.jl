@@ -5,12 +5,12 @@ module MixedModelsBLB
 using MathProgBase
 using Reexport
 using Distributions
-using JuliaDB
+# using JuliaDB
 using Random
 using StatsModels
 using StatsBase
-using DataFrames
-using CSV
+# using DataFrames
+# using CSV
 using InteractiveUtils
 using Permutations
 using LinearAlgebra
@@ -25,8 +25,9 @@ import LinearAlgebra: BlasFloat, checksquare
 @reexport using MixedModels
 
 export blblmmObs, blblmmModel
-export update_w!, extract_Σ!, init_ls!, fit!, loglikelihood! # lmm.jl
+export update_w!, init_ls!, fit!, loglikelihood! # lmm.jl
 export SubsetEstimates, blbEstimates, save_bootstrap_result!, blb_one_subset, blb_full_data # blb.jl
+export confint, fixef, vc, coeftable # blb.jl
 export Simulator, simulate! # simulate.jl
 
 """
@@ -135,6 +136,7 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     b::Int    # total number of unique IDs (individuals) in the subset
     p::Int            # number of fixed effect parameters
     q::Int            # number of random effect parameters
+    q◺::Int           # number of parameters in the cholesky factor of Σ
     w::Vector{Int}      # a vector of weights from bootstraping the subset
     # model parameters
     β::Vector{T}     # fixed effects
@@ -201,7 +203,7 @@ function blblmmModel(
     # ntotal = 0
     blblmmModel{T}(
         obsvec, fenames, renames, 
-        N, b, p, q, w,
+        N, b, p, q, q◺, w,
         β, σ², Σ, ΣL, 
         ∇β, ∇σ², ∇L, Hββ, Hσ²σ², Hσ²L, HLL,
         xtx, xty, ztz2, ztr2, diagidx

@@ -11,15 +11,20 @@ struct SubsetEstimates{T <: LinearAlgebra.BlasReal}
     p::Int64
     q::Int64
     # blb results
-    βs::Vector{Vector{T}}
-    Σs::Vector{Matrix{T}}
+    βs::Matrix{T}
+    Σs::Array{T}
     σ²s::Vector{T}
 end
 
 # constructor
 function SubsetEstimates(n_boots::Int64, p::Int64, q::Int64)
-    βs  = [Vector{Float64}(undef,  p) for _ in 1:n_boots] #Vector{Vector{Float64}}()
-    Σs  = [Matrix{Float64}(undef, q, q) for _ in 1:n_boots] #Vector{Matrix{Float64}}()
+    # vector of vector/matrices approach
+    # βs  = [Vector{Float64}(undef,  p) for _ in 1:n_boots] #Vector{Vector{Float64}}()
+    # Σs  = [Matrix{Float64}(undef, q, q) for _ in 1:n_boots] #Vector{Matrix{Float64}}()
+
+    # multi-dimensional array approach
+    βs  = Matrix{Float64}(undef, n_boots, p) 
+    Σs  = Array{Float64}(undef, q, q, n_boots) # 3d array 
     σ²s = Vector{Float64}(undef, n_boots)
     SubsetEstimates(n_boots, p, q, βs, Σs, σ²s)
 end
@@ -32,7 +37,10 @@ blb parameters and a vector of `SubsetEstimates`
 struct blbEstimates{T <: LinearAlgebra.BlasReal}
     # blb parameters
     n_subsets::Int64
+    subset_size::Int64
     n_boots::Int64
+    fenames::Vector{String}
+    renames::Vector{String}
     # subset estimates from all subsets
     all_estimates::Vector{SubsetEstimates{T}}
 end
@@ -56,8 +64,15 @@ function save_bootstrap_result!(
     Σ::Matrix{T},
     σ²::T
     ) where T <: BlasReal
-    subset_estimates.βs[i] = β
-    subset_estimates.Σs[i] = Σ
+    # using the vector of vectors/matrices approach
+    # copyto!(subset_estimates.βs[i], β)
+    # copyto!(subset_estimates.Σs[i], Σ)
+
+    # using the multi-dimensional array approach
+    subset_estimates.βs[i, :] = β
+    subset_estimates.Σs[:, :, i] = Σ
+    # view(subset_estimates.βs, i, :) .= β
+    # view(subset_estimates.Σs, :, :, i) .= Σ
     subset_estimates.σ²s[i] = σ²
 end
 
@@ -115,11 +130,12 @@ function blb_one_subset(
         
         # Fit model on the bootstrap sample
         fit!(m; solver = solver)
-        # print("m.β = ", m.β, "\n")
+        # print("After fitting on the bootstrap sample, m.β = ", m.β, "\n")
         # print("m.Σ = ", m.Σ, "\n")
         
         # Save estimates
         save_bootstrap_result!(subset_estimates, k, m.β, m.Σ, m.σ²[1])
+        # print("After save_bootstrap_result, subset_estimates = ", subset_estimates, "\n")
 
         # Reset model parameter to subset estimates as initial parameters because
         # using the bootstrap estimates from each iteration may be unstable.
@@ -144,7 +160,7 @@ Construct the blblmmObs type
 # Values
 - `cat_levels`: a dictionary that contains the number of levels of each categorical variable.
 """
-function blblmmobs(data_obs::Union{Tables.AbstractColumns, DataFrames.DataFrame}, feformula::FormulaTerm, reformula::FormulaTerm)
+function blblmmobs(data_obs, feformula::FormulaTerm, reformula::FormulaTerm)
     y, X = StatsModels.modelcols(feformula, data_obs)
     Z = StatsModels.modelmatrix(reformula, data_obs)
     return blblmmObs(y, X, Z)
@@ -163,7 +179,7 @@ Count the number of levels of each categorical variable.
 # Values
 - `cat_levels`: a dictionary that contains the number of levels of each categorical variable.
 """
-function count_levels(data_columns::Union{Tables.AbstractColumns, DataFrames.DataFrame}, cat_names::Vector{String})
+function count_levels(data_columns, cat_names::Vector{String})
     cat_levels = Dict{String, Int64}()
     @inbounds for cat_name in cat_names
         cat_levels[cat_name] = length(countmap(Tables.getcolumn(data_columns, Symbol(cat_name))))
@@ -314,112 +330,134 @@ function blb_full_data(
     end
 
     # Create a blbEstimates instance for storing results from all subsets
-    result = blbEstimates{Float64}(n_subsets, n_boots, all_estimates)
+    result = blbEstimates{Float64}(n_subsets, subset_size, n_boots, fenames, renames, all_estimates)
     return result
 end
 
 
 
-"""
-summary(x::Vector{Matrix{Float64}})
-
-# Positional arguments 
-- `x`: parameter estimates, a vector (of size n_subsets) of matrices (of size n_boots-by-k), where k is the number of parameters.
-
-# Values
-- 
-"""
-# function summary(x::Vector{Matrix{T}}) where T <: BlasReal 
-#     n_subsets = length(x)
-#     d = size(x[1], 2)
-#     est_all = zeros(d)
-#     ci = fill(0., (d, 2))
-#     for i = 1 : d
-#         est[i] = ??
-#         ci[i, :] = StatsBase.percentile(par[((i - 1) * r + 1) : ((i - 1) * r + r)], [2.5, 97.5])
-#     end
-# end
-
+function confint(subset_ests::SubsetEstimates, level::Real)
+    ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
+    for i in 1:subset_ests.p
+        ci_βs[i, :] = StatsBase.percentile(view(subset_ests.βs, :, i), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+    end
+    ◺q = ◺(subset_ests.q)
+    ci_Σs = Matrix{Float64}(undef, ◺q, 2)
+    k = 1
+    # For Σ, we get the CI for the upper-triangular values.
+    @inbounds for i in 1:subset_ests.q
+        @inbounds for j in i:subset_ests.q
+            ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, j, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+            k += 1
+        end
+    end
+    ci_σ²s = reshape(StatsBase.percentile(subset_ests.σ²s, 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
+    return ci_βs, ci_Σs, ci_σ²s
+end
 
 
 
+function confint(blb_ests::blbEstimates, level::Real)
+    # initialize arrays for storing the CIs from each subset
+    cis_βs = Array{Float64}(undef, blb_ests.all_estimates[1].p, 2, blb_ests.n_subsets) 
+    cis_Σs = Array{Float64}(undef, ◺(blb_ests.all_estimates[1].q), 2, blb_ests.n_subsets) 
+    cis_σ²s = Array{Float64}(undef, 1, 2, blb_ests.n_subsets) 
+    @inbounds for i in 1:blb_ests.n_subsets
+        cis_βs[:, :, i], cis_Σs[:, :, i], cis_σ²s[:, :, i] = confint(blb_ests.all_estimates[i], level)
+    end
+    ci_β  = mean(cis_βs, dims = 3)[:, :, 1]
+    ci_Σ  = mean(cis_Σs, dims = 3)[:, :, 1]
+    ci_σ² = mean(cis_σ²s, dims = 3)[:, :, 1]
+    return ci_β, ci_Σ, ci_σ²
+end
+confint(blb_ests::blbEstimates) = confint(blb_ests, 0.95)
 
-# """
-#     blb_full_data(y, X, Z, id, N; subset_size, n_subsets, n_boots, solver, verbose)
 
-# Performs Bag of Little Bootstraps on the full dataset. This interface is intended for smaller datasets that can be loaded in memory.
+# returns fixed effect estimates
+function fixef(blb_ests::blbEstimates)
+    means_βs = Matrix{Float64}(undef, blb_ests.n_subsets, blb_ests.all_estimates[1].p) # n-by-p matrix 
+    for i in 1:blb_ests.n_subsets
+        means_βs[i, :] = mean(blb_ests.all_estimates[i].βs, dims = 1)
+    end
+    mean_β = mean(means_βs, dims = 1)
+    return mean_β
+end
 
 
-# # Positional arguments 
-# - `y`: response vector
-# - `X`: design matrix for fixed effects
-# - `Z`: design matrix for random effects
-# - `id`: cluster identifier
+# returns variance components estimates
+function vc(blb_ests::blbEstimates)
+    means_Σs = Array{Float64}(undef, blb_ests.all_estimates[1].q, blb_ests.all_estimates[1].q, blb_ests.n_subsets)
+    # print(means_Σs, "\n")
+    means_σ²s = Vector{Float64}(undef, blb_ests.n_subsets)
+    for i in 1:blb_ests.n_subsets
+        # print(mean(blb_ests.all_estimates[i].Σs, dims = 3), "\n")
+        means_Σs[:,:,i] = mean(blb_ests.all_estimates[i].Σs, dims = 3)
+        # view(means_Σs, :, :, i) .= mean(blb_ests.all_estimates[i].Σs, dims = 3)
+        means_σ²s[i] = mean(blb_ests.all_estimates[i].σ²s)
+    end
+    mean_Σ = mean(means_Σs, dims = 3)[:, :, 1]
+    mean_σ² = mean(means_σ²s)
+    return mean_Σ, mean_σ²
+end
 
-# # Keyword arguments
-# - `subset_size`: number of clusters in the subset. Default to the square root of the total number of clusters.
-# - `n_subsets`: number of subsets.
-# - `n_boots`: number of bootstrap iterations. Default to 1000
-# - `solver`: solver for the optimization problem. 
-# - `verbose`: print extra information ???
+function StatsBase.coeftable(blb_ests::blbEstimates, fe_ci::Matrix)
+    co = fixef(blb_ests)
+    # print("co = ", co, "\n")
+    # pvalue = 
+    # names = blb_ests.fenames
 
-# # Values
-# - `β̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-p)
-# - `Σ̂`: a vector (of size n_subsets) of matrices (of size n_boots-by-q, only saves the diagonals of Σ̂)
-# - `σ²̂`: a vector (of size n_subsets) of vectors (of size n_boots)
-# """
+    CoefTable(
+        hcat(reshape(co, :, 1), fe_ci[:, 1], fe_ci[:, 2]),
+        ["Estimate", "Lower", "Upper"],
+        blb_ests.fenames
+        # 4 # pvalcol
+    )
+end
 
-# function blb_full_data(
-#     # positional arguments
-#     df::DataFrame,
-#     f::FormulaTerm;
-#     # y::Vector{T}, 
-#     # X::Matrix{T}, 
-#     # Z::Matrix{T}, 
-#     # id::Vector{Int64};
-#     # keyword arguments
-#     subset_size::Int64 = floor(sqrt(length(unique(id)))),
-#     n_subsets::Int64 = 10,
-#     n_boots::Int64 = 1000,
-#     # solver = NLopt.NLoptSolver(algorithm=:LN_BOBYQA, maxeval=10000),
-#     solver = Ipopt.IpoptSolver(),
-#     verbose::Bool = false
-#     ) where T <: BlasReal 
 
-#     p, q = size(X, 2), size(Z, 2)
-#     N = length(unique(id))
-#     # print("p = ", p, "\n")
-#     # Initialize arrays for storing the results
-#     # !! maybe use three dimensional arrays to avoid ugly subsetting    
-#     β̂ = [Vector{Float64}(undef, p) for i = 1:(n_subsets * subset_size)]
-#     Σ̂ = [Matrix{Float64}(undef, q, q) for i = 1:(n_subsets * subset_size)]
-#     σ²̂ = zeros(0)
+function Base.show(io::IO, blb_ests::blbEstimates)
+    println("Bag of Little Boostrap (BLB) for linear mixed models.")
+    println("Number of subsets: ", blb_ests.n_subsets)
+    println("Number of grouping factors per subset: ", blb_ests.subset_size)
+    println("Number of bootstrap samples per subset: ", blb_ests.n_boots)
+    println(io)
 
-#     blb_id = fill(0, subset_size)
+    # calculate all CIs
+    ci_β, ci_Σ, ci_σ² = confint(blb_ests)
+    cnames = ["lower" "upper"]
+
+    println("Variance Components")
+    mean_Σ, mean_σ² = vc(blb_ests)
+    println(io)
+
+    println("Random Effects")
+    println(io)
+    println("Estimates")
+    # print("blb_ests.renames = ", blb_ests.renames, "\n")
+    # print("mean_Σ = ", mean_Σ, "\n")
+    # show(io, [Text.(reshape(blb_ests.renames, 1, :)); mean_Σ])
+    show(io, mean_Σ)
+    println(io)
+    println("CI")
+    # show(io, [Text.(cnames); ci_Σ])
+    show(io, ci_Σ)
+    println(io)
+
+    println("Residual")
+    println("Estimate")
+    show(io, mean_σ²)
+    println(io)
+    println("CI")
+    # show(io, [Text.(cnames); ci_σ²])
+    show(io, ci_σ²)
+    println(io)
+    println(io)
+
     
-#     Threads.@threads  for j = 1:n_subsets
-#         sample!(id, blb_id; replace = false)
-#         sort!(blb_id)
-
-#         df_subset = df[subset_indices, :]
-#         categorical!(df, Symbol("id"))
-#         m = LinearMixedModel(f, df)
-
-#         β̂[((j-1) * n_boots + 1):(j * n_boots)], 
-#         Σ̂[((j-1) * n_boots + 1):(j * n_boots)], 
-#         σ²̂[((j-1) * n_boots + 1):(j * n_boots)] = 
-#         blb_one_subset(
-#             # need to implement
-#             id[id .== blb_id],
-#             N = N;
-#             n_boots = n_boots,
-#             solver = solver,
-#             verbose = verbose
-#         )
-#     end
-#     return β̂, Σ̂, σ²̂
-# end
-
+    println("Fixed-effect parameters")
+    print("ci_β = ", ci_β, "\n")
+    show(io, coeftable(blb_ests, ci_β))
+end
 
 
 

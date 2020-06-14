@@ -27,7 +27,10 @@ function init_ls!(m::blblmmModel{T}) where T <: BlasReal
         BLAS.axpy!(T(1), m.data[i].xtx, m.xtx)
         BLAS.axpy!(T(1), m.data[i].xty, m.xty)
     end
-    ldiv!(m.β, cholesky!(Symmetric(m.xtx)), m.xty)
+    LinearAlgebra.copytri!(m.xtx, 'U')
+    LAPACK.potrf!('U', m.xtx)
+    BLAS.trsv!('U', 'T', 'N', m.xtx, copyto!(m.β, m.xty))
+    BLAS.trsv!('U', 'N', 'N', m.xtx, m.β)
     # LS etimate for σ2 and Σ
     rss, ntotal = zero(T), 0
     fill!(m.ztz2, 0)
@@ -48,33 +51,17 @@ function init_ls!(m::blblmmModel{T}) where T <: BlasReal
     end
     m.σ²[1] = rss / ntotal
     # LS estimate for Σ = LLt 
-    ldiv!(vec(m.ΣL), cholesky!(Symmetric(m.ztz2)), m.ztr2)
+    LinearAlgebra.copytri!(m.ztz2, 'U')
+    LAPACK.potrf!('U', m.ztz2)
+    BLAS.trsv!('U', 'T', 'N', m.ztz2, copyto!(vec(m.ΣL), m.ztr2))
+    BLAS.trsv!('U', 'N', 'N', m.ztz2, vec(m.ΣL))
+    # ldiv!(vec(m.ΣL), cholesky!(Symmetric(m.ztz2)), m.ztr2)
     LAPACK.potrf!('L', m.ΣL)
     for j in 2:m.q, i in 1:j-1
         m.ΣL[i, j] = 0
     end
     mul!(m.Σ, m.ΣL, transpose(m.ΣL))
     m
-end
-
-
-"""
-    extract_Σ!(Σ, lmm::LinearMixedModel)
-
-Extract the variance-covariance matrix of variance components 
-from a LinearMixedModel object for initialization.
-"""
-function extract_Σ!(Σ, lmm::LinearMixedModel)
-    σρ = MixedModels.VarCorr(lmm).σρ
-    q = size(Σ, 1) #length(σρ[1][1])
-    @inbounds @views for i in 1:q
-        Σ[i, i] = (σρ[1][1][i])^2
-        @inbounds for j in (i+1):q
-            Σ[i, j] = σρ[1][2][(j-1)] * σρ[1][1][i] * σρ[1][1][j]
-        end
-    end
-    LinearAlgebra.copytri!(Σ, 'U')
-    return(Σ)
 end
 
 
@@ -483,10 +470,12 @@ function MathProgBase.eval_hesslag(
     
     # Since we took log of the diagonal elements, log(ΣL[j,j])
     # we need to do scaling as follows
-    for (iter, icontent) in enumerate(m.diagidx)
+    @inbounds for (iter, icontent) in enumerate(m.diagidx)
         # On the diagonal we have hessian wrt log(ΣL[j,j])
-        m.HLL[icontent, :] = m.HLL[icontent, :] * m.ΣL[iter, iter]
-        m.HLL[:, icontent] = m.HLL[:, icontent] * m.ΣL[iter, iter]
+        @inbounds for j in 1:m.q◺
+            m.HLL[icontent, j] = m.HLL[icontent, j] * m.ΣL[iter, iter]
+            m.HLL[j, icontent] = m.HLL[j, icontent] * m.ΣL[iter, iter]
+        end
         m.Hσ²L[icontent] = m.Hσ²L[icontent] * m.ΣL[iter, iter]
     end
 

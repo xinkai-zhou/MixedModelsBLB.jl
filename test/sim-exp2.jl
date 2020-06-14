@@ -3,12 +3,12 @@
 
 using MixedModels, Random, Distributions, DataFrames, CSV, JuliaDB
 using MixedModelsBLB
-Random.seed!(1)
+
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 # datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
-
+Random.seed!(1)
 reps = 20
-N = 1000
+N = 10000
 x1 = rand(Normal(0, 1), reps * N)
 x2 = rand(Normal(0, 3), reps * N)
 rand_slope = zeros(reps * N)
@@ -72,9 +72,9 @@ result = blb_full_data(
         id_name = "id", 
         cat_names = Array{String,1}(), 
         subset_size = 1000,
-        n_subsets = 1, 
-        n_boots = 3,
-        solver = Ipopt.IpoptSolver(print_level = 1),
+        n_subsets = 5, 
+        n_boots = 10,
+        solver = Ipopt.IpoptSolver(print_level = 0),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
         #   derivative_test = "second-order", 
