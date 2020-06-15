@@ -322,7 +322,8 @@ function modelpar_to_optimpar!(
     Σchol = cholesky(Symmetric(m.Σ), Val(false); check = false)
     # By using cholesky decomposition and optimizing L, 
     # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
-    m.ΣL .= Σchol.L
+    # m.ΣL .= Σchol.L
+    copyto!(m.ΣL, Σchol.L)
     offset = m.p + 2
     @inbounds for j in 1:m.q
         par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
