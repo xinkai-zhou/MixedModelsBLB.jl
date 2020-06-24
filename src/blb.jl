@@ -71,8 +71,6 @@ function save_bootstrap_result!(
     # using the multi-dimensional array approach
     subset_estimates.βs[i, :] = β
     subset_estimates.Σs[:, :, i] = Σ
-    # view(subset_estimates.βs, i, :) .= β
-    # view(subset_estimates.Σs, :, :, i) .= Σ
     subset_estimates.σ²s[i] = σ²
 end
 
@@ -94,19 +92,18 @@ Performs Bag of Little Bootstraps on a subset.
 - `subset_estimates`: an object of the SubsetEstimates type
 """
 function blb_one_subset(
-    # positional arguments
     m::blblmmModel{T};
-    # keyword arguments
     n_boots::Int64 = 1000,
     solver = Ipopt.IpoptSolver(),
     verbose::Bool = false
     ) where T <: BlasReal 
 
     # Initalize model parameters
-    init_ls!(m)
+    init_ls!(m, verbose)
     
     # Fit LMM on the subset
-    fit!(m; solver = solver) 
+    fit!(m; solver = solver)
+    verbose && print("m.Σ = ", m.Σ, "\n") 
 
     # Initalize an instance of SubsetEstimates type for storing results
     subset_estimates = SubsetEstimates(n_boots, m.p, m.q)
@@ -202,7 +199,6 @@ Draw a subset from the full dataset.
 """
 function subsetting!(
     subset_id::Vector,
-    # data_columns::Union{Tables.AbstractColumns, DataFrame},
     data_columns,
     id_name::Symbol,
     unique_id::Vector,

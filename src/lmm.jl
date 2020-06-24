@@ -17,7 +17,7 @@ end
 Initialize parameters of a `blblmmModel` object from the least squares estimate. 
 `m.β`, `m.ΣL`, and `m.σ²` are overwritten with the least squares estimates.
 """
-function init_ls!(m::blblmmModel{T}) where T <: BlasReal
+function init_ls!(m::blblmmModel{T}, verbose::Bool = false) where T <: BlasReal
     # p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
     # LS estimate for β
     fill!(m.xtx, 0)
@@ -53,14 +53,25 @@ function init_ls!(m::blblmmModel{T}) where T <: BlasReal
     # LS estimate for Σ = LLt 
     LinearAlgebra.copytri!(m.ztz2, 'U')
     LAPACK.potrf!('U', m.ztz2)
-    BLAS.trsv!('U', 'T', 'N', m.ztz2, copyto!(vec(m.ΣL), m.ztr2))
-    BLAS.trsv!('U', 'N', 'N', m.ztz2, vec(m.ΣL))
+    BLAS.trsv!('U', 'T', 'N', m.ztz2, copyto!(vec(m.Σ), m.ztr2))
+    BLAS.trsv!('U', 'N', 'N', m.ztz2, vec(m.Σ))
+    LinearAlgebra.copytri!(m.Σ, 'U')
+    verbose && print("in init, m.Σ = ", m.Σ, "\n")
     # ldiv!(vec(m.ΣL), cholesky!(Symmetric(m.ztz2)), m.ztr2)
+    copyto!(m.ΣL, m.Σ)
     LAPACK.potrf!('L', m.ΣL)
     for j in 2:m.q, i in 1:j-1
         m.ΣL[i, j] = 0
     end
-    mul!(m.Σ, m.ΣL, transpose(m.ΣL))
+    verbose && print("in init, m.ΣL = ", m.ΣL, "\n")
+    # mul!(m.Σ, m.ΣL, transpose(m.ΣL))
+    # if !isposdef(m.Σ)
+    #     copyto!(m.Σ, zeros(m.q, m.q))
+    #     for i in 1:m.q
+    #         m.Σ[i, i] = 1
+    #     end
+    # end
+    
     m
 end
 
@@ -277,8 +288,8 @@ end
 
 
 function fit!(
-    m::blblmmModel;
-    solver=Ipopt.IpoptSolver(print_level=5)
+    m::blblmmModel,
+    solver = Ipopt.IpoptSolver(print_level=5)
     )
     npar = m.p + 1 + ◺(m.q) #(q * (q + 1)) >> 1
     # since X includes a column of 1, p is the number of mean parameters
@@ -318,12 +329,16 @@ function modelpar_to_optimpar!(
     copyto!(par, m.β)
     par[m.p+1] = log(m.σ²[1]) # take log and then exp() later to make the problem unconstrained
     
-    # Since modelpar_to_optimpar is only called once, it's ok to allocate Σchol
-    Σchol = cholesky(Symmetric(m.Σ), Val(false); check = false)
-    # By using cholesky decomposition and optimizing L, 
-    # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
-    # m.ΣL .= Σchol.L
-    copyto!(m.ΣL, Σchol.L)
+    copyto!(m.ΣL, Symmetric(m.Σ))
+    LAPACK.potrf!('L', m.ΣL)
+
+    # # Since modelpar_to_optimpar is only called once, it's ok to allocate Σchol
+    # Σchol = cholesky(Symmetric(m.Σ), Val(false); check = false)
+    # # By using cholesky decomposition and optimizing L, 
+    # # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
+    # # m.ΣL .= Σchol.L
+    # copyto!(m.ΣL, Σchol.L)
+
     offset = m.p + 2
     @inbounds for j in 1:m.q
         par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative

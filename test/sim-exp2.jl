@@ -1,7 +1,8 @@
 
 # Comparing speed
-
-using MixedModels, Random, Distributions, DataFrames, CSV, JuliaDB
+using StatsModels, Ipopt
+using Random, Distributions, DataFrames, CSV, JuliaDB
+# using MixedModels
 using MixedModelsBLB
 
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))

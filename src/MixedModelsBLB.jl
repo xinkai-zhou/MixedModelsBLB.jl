@@ -22,13 +22,14 @@ import LinearAlgebra: BlasFloat, checksquare
 
 @reexport using Ipopt
 @reexport using NLopt
-@reexport using MixedModels
+# @reexport using MixedModels
 
 export blblmmObs, blblmmModel
 export update_w!, init_ls!, fit!, loglikelihood! # lmm.jl
 export SubsetEstimates, blbEstimates, save_bootstrap_result!, blb_one_subset, blb_full_data # blb.jl
 export confint, fixef, vc, coeftable # blb.jl
 export Simulator, simulate! # simulate.jl
+export ◺ # multivariate_calculus.jl
 
 """
 blblmmObs
@@ -142,8 +143,8 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     β::Vector{T}     # fixed effects
     σ²::Vector{T}    # error variance
     Σ::Matrix{T}     # covariance of random effects
+    ΣL::Matrix{T}    # lower cholesky factor of Σ
     # grad and hess
-    ΣL::Matrix{T}
     ∇β::Vector{T} 
     ∇σ²::Vector{T}
     ∇L::Matrix{T}
