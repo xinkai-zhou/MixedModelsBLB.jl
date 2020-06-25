@@ -102,7 +102,7 @@ function blb_one_subset(
     init_ls!(m, verbose)
     
     # Fit LMM on the subset
-    fit!(m; solver = solver)
+    fit!(m, solver)
     verbose && print("m.Σ = ", m.Σ, "\n") 
 
     # Initalize an instance of SubsetEstimates type for storing results
@@ -126,7 +126,7 @@ function blb_one_subset(
         update_w!(m, simulator.ns)
         
         # Fit model on the bootstrap sample
-        fit!(m; solver = solver)
+        fit!(m, solver)
         # print("After fitting on the bootstrap sample, m.β = ", m.β, "\n")
         # print("m.Σ = ", m.Σ, "\n")
         
