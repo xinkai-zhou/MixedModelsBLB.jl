@@ -43,6 +43,7 @@ struct blbEstimates{T <: LinearAlgebra.BlasReal}
     renames::Vector{String}
     # subset estimates from all subsets
     all_estimates::Vector{SubsetEstimates{T}}
+    runtime::Vector{Float64}
 end
 
 """
@@ -298,10 +299,13 @@ function blb_full_data(
     # ??? Float64 or some other type?
     obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
 
+    runtime = Vector{Float64}(undef, n_subsets)
+
     # Threads.@threads for j = 1:n_subsets
     @inbounds for j = 1:n_subsets
         # https://julialang.org/blog/2019/07/multithreading
-        
+        time0 = time_ns()
+
         # Take a subset
         subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
         
@@ -323,10 +327,11 @@ function blb_full_data(
             solver = solver, 
             verbose = verbose
         )
+        runtime[j] = (time_ns() - time0) / 1e9
     end
 
     # Create a blbEstimates instance for storing results from all subsets
-    result = blbEstimates{Float64}(n_subsets, subset_size, n_boots, fenames, renames, all_estimates)
+    result = blbEstimates{Float64}(n_subsets, subset_size, n_boots, fenames, renames, all_estimates, runtime)
     return result
 end
 
