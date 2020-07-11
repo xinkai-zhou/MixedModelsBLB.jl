@@ -89,6 +89,14 @@ function loglikelihood!(
     ΣL::Matrix{T},
     needgrad::Bool = false,
     needhess::Bool = false
+
+    # obs::blblmmObs{T},
+    # β::Vector{T},
+    # σ²::Vector{T}, 
+    # # Σ::Matrix{T},
+    # L::Matrix{T},
+    # needgrad::Bool = false,
+    # needhess::Bool = false
     ) where T <: BlasReal
 
     n, p, q = size(obs.X, 1), size(obs.X, 2), size(obs.Z, 2)
@@ -245,6 +253,112 @@ function loglikelihood!(
     end
 
     logl
+
+
+    # n, p, q = size(obs.X, 1), size(obs.X, 2), size(obs.Z, 2)
+    # σ²inv = 1 / σ²[1] #inv(σ²)
+    # ####################
+    # # Evaluate objective
+    # ####################
+    # # form the q-by-q matrix: Lt Zt Z L
+    # copy!(obs.ltztzl, obs.ztz)
+    # BLAS.trmm!('L', 'L', 'T', 'N', T(1), L, obs.ltztzl) # O(q^3)
+    # BLAS.trmm!('R', 'L', 'N', 'N', T(1), L, obs.ltztzl) # O(q^3)    
+    # # form the q-by-q matrix: M = σ² I + Lt Zt Z L
+    # copy!(obs.M, obs.ltztzl)
+    # @inbounds for j in 1:q
+    #     obs.M[j, j] += σ²[1]
+    # end
+    # # cholesky on M = σ² I + Lt Zt Z L
+    # LAPACK.potrf!('U', obs.M) # O(q^3)
+    # # Zt * res
+    # BLAS.gemv!('N', T(-1), obs.ztx, β, T(1), copy!(obs.ztr, obs.zty)) # O(pq)
+    # # Lt * Zt * res
+    # BLAS.trmv!('L', 'T', 'N', L, copy!(obs.ltztr, obs.ztr))    # O(q^2)
+    # # storage_q = (Mchol.U') \ (Lt * (Zt * res))
+    # BLAS.trsv!('U', 'T', 'N', obs.M, copy!(obs.storage_q, obs.ltztr)) # O(q^3)
+    # # Xt * res = Xt * y - Xt * X * β
+    # BLAS.gemv!('N', T(-1), obs.xtx, β, T(1), copy!(obs.xtr, obs.xty))
+    # # l2 norm of residual vector
+    # rtr = obs.yty - dot(obs.xty, β) - dot(obs.xtr, β)
+    # # assemble pieces
+    # logl::T = n * log(2π) + (n - q) * log(σ²[1]) # constant term
+    # @inbounds for j in 1:q # log det term
+    #     logl += 2log(obs.M[j, j])
+    # end
+    # qf    = abs2(norm(obs.storage_q)) # quadratic form term
+    # logl += (rtr - qf) * σ²inv
+    # logl /= -2
+    # ###################
+    # # Evaluate gradient
+    # ###################    
+    # if needgrad
+    #     # M is Minv now: M = (σ² I + Lt Zt Z L)^{-1}
+    #     Minv = LAPACK.potri!('U', obs.M)
+    #     LinearAlgebra.copytri!(Minv, 'U')
+    #     # form lminvlt = L * Minv * Lt
+    #     copy!(obs.lminvlt, Minv)
+    #     BLAS.trmm!('L', 'L', 'N', 'N', T(1), L, obs.lminvlt) # O(q^3)
+    #     BLAS.trmm!('R', 'L', 'T', 'N', T(1), L, obs.lminvlt) # O(q^3)          
+    #     # storage_q = (L * Minv * Lt) * (Zt * res)
+    #     BLAS.gemv!('N', T(1), obs.lminvlt, obs.ztr, T(0), obs.storage_q)
+    #     # compute ∇β
+    #     BLAS.gemv!('T', T(-1), obs.ztx, obs.storage_q, T(1), copy!(obs.∇β, obs.xtr))
+    #     obs.∇β .*= σ²inv
+    #     # compute ∇σ²        
+    #     BLAS.gemv!('N', T(1), obs.ztz, obs.storage_q, T(0), obs.ltztr)
+    #     obs.∇σ²[1]  = (rtr - 2qf + dot(obs.storage_q, obs.ltztr)) * abs2(σ²inv)
+    #     tr_minvltztzl = dot(obs.ltztzl, Minv) # needed in hessian too
+    #     obs.∇σ²[1] -= (n - tr_minvltztzl) * σ²inv
+    #     obs.∇σ²[1] /= 2
+    #     # compute ∇Σ
+    #     # Form ztΩinvz = (obs.ztz .- obs.ztz * obs.lminvlt * obs.ztz) / σ²
+    #     mul!(obs.∇Σ, obs.ztz, obs.lminvlt)
+    #     mul!(obs.ztΩinvz, obs.∇Σ, obs.ztz)
+    #     if needhess
+    #         tr_lminvltztzlminvltztz = dot(obs.lminvlt, obs.ztΩinvz) # to be used later
+    #         # calcualte obs.Hσ²L
+    #         copy!(obs.Hσ²L, obs.ztΩinvz)
+    #         BLAS.gemm!('N', 'N', T(1), obs.∇Σ, obs.ztΩinvz, T(-2), obs.Hσ²L)
+    #         obs.Hσ²L .+= obs.ztz
+    #         obs.Hσ²L .*= -abs2(σ²inv)
+    #         vech!(obs.Hσ²Lvec, obs.Hσ²L)
+    #     end
+    #     obs.ztΩinvz .= (obs.ztz .- obs.ztΩinvz) .* σ²inv
+    #     # obs.∇Σ .= - obs.ztΩinvz + (Zt * inv(Ω) * res) * (Zt * inv(Ω) * res)^T
+    #     copy!(obs.∇Σ, obs.ztΩinvz)
+    #     # obs.ztr = Zt * inv(Ω) * res now
+    #     BLAS.gemv!('N', T(-1), obs.ztz, obs.storage_q, T(1), obs.ztr)
+    #     obs.ztr .*= σ²inv
+    #     # assemble pieces
+    #     BLAS.syrk!('U', 'N', T(1), obs.ztr, T(-1), obs.∇Σ)
+    #     LinearAlgebra.copytri!(obs.∇Σ, 'U')
+    # end
+    # ###################
+    # # Evaluate Hessian
+    # ###################    
+    # if needhess
+    #     # Hββ = - σ²inv * (xtx - xtz * (L * Minv * Lt) * ztx)
+    #     mul!(obs.storage_pq, transpose(obs.ztx), obs.lminvlt)
+    #     mul!(obs.Hββ, obs.storage_pq, obs.ztx)
+    #     obs.Hββ .= (obs.Hββ .- obs.xtx) .* σ²inv
+    #     # HLL
+    #     fill!(obs.HLL, 0)
+    #     # storage_qq = (Zt * Ωinv * Z) * L
+    #     mul!(obs.storage_qq, obs.ztΩinvz, L)
+    #     Ct_At_kron_A_KC!(obs.HLL, obs.storage_qq)
+    #     # storage_qq = Lt * (Zt * Ωinv * Z) * L
+    #     BLAS.trmm!('L', 'L', 'T', 'N', T(1), L, obs.storage_qq)
+    #     Ct_A_kron_B_C!(obs.HLL, obs.storage_qq, obs.ztΩinvz)
+    #     obs.HLL .*= -1
+    #     # Hσ²σ²
+    #     obs.Hσ²σ²[1, 1] = - (n - 2tr_minvltztzl + tr_lminvltztzlminvltztz) * abs2(σ²inv) / 2
+    #     # Hσ²L was done earlier in gradient calculation
+    # end
+    # ###################
+    # # Return
+    # ###################        
+    # return logl
 end
 
 function loglikelihood!(
@@ -252,40 +366,89 @@ function loglikelihood!(
     needgrad::Bool = false,
     needhess::Bool = false
     ) where T <: BlasReal
-
     logl = zero(T)
+    @inbounds for i in eachindex(m.data)
+        logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
+    end
     if needgrad
         fill!(m.∇β, 0)
         fill!(m.∇σ², 0)
         fill!(m.∇L, 0)
+        @inbounds for i in 1:length(m.data)
+            obs = m.data[i]
+            BLAS.axpy!(m.w[i], obs.∇β, m.∇β)
+            # BLAS.axpy!(m.w[i], m.data[i].∇σ², m.∇σ²)
+            m.∇σ²[1] += m.w[i] * obs.∇σ²[1]
+            BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
+            # BLAS.axpy!(m.w[i], obs.∇Σ, m.∇L)
+        end
+        # To save cost, we didn't multiply ΣL above in the expression of ∇L
+        # Here we do the multiplication
+        BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
     end
     if needhess
         fill!(m.Hββ, 0)
         fill!(m.Hσ²σ², 0)
         fill!(m.HLL, 0)
         fill!(m.Hσ²L, 0)
-    end
-    for i in eachindex(m.data)
-        logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
-        if needgrad
-            BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
-            BLAS.axpy!(m.w[i], m.data[i].∇σ², m.∇σ²)
-            BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
-        end
-        if needhess
-            BLAS.axpy!(m.w[i], m.data[i].Hββ, m.Hββ)
-            BLAS.axpy!(m.w[i], m.data[i].Hσ²σ², m.Hσ²σ²)
-            BLAS.axpy!(m.w[i], m.data[i].HLL, m.HLL)
-            BLAS.axpy!(m.w[i], m.data[i].Hσ²L, m.Hσ²L)
+        @inbounds for i in 1:length(m.data)
+            obs = m.data[i]
+            BLAS.axpy!(m.w[i], obs.Hββ, m.Hββ)
+            # BLAS.axpy!(m.w[i], obs.Hσ²σ², m.Hσ²σ²)
+            m.Hσ²σ²[1] += m.w[i] * obs.Hσ²σ²[1]
+            BLAS.axpy!(m.w[i], obs.HLL, m.HLL)
+            # BLAS.axpy!(m.w[i], obs.Hσ²Lvec, m.Hσ²L)
+            BLAS.axpy!(m.w[i], obs.Hσ²L, m.Hσ²L)
         end
     end
-    # To save cost, we didn't multiply ΣL above in the expression of ∇L
-    # Here we do the multiplication
-    needgrad && BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
-
+    # for i in eachindex(m.data)
+    #     logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
+    #     if needgrad
+    #         BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
+    #         BLAS.axpy!(m.w[i], m.data[i].∇σ², m.∇σ²)
+    #         # BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
+    #         BLAS.axpy!(m.w[i], m.data[i].∇Σ, m.∇L)
+    #     end
+    #     if needhess
+    #         BLAS.axpy!(m.w[i], m.data[i].Hββ, m.Hββ)
+    #         BLAS.axpy!(m.w[i], m.data[i].Hσ²σ², m.Hσ²σ²)
+    #         BLAS.axpy!(m.w[i], m.data[i].HLL, m.HLL)
+    #         BLAS.axpy!(m.w[i], m.data[i].Hσ²L, m.Hσ²L)
+    #     end
+    # end
     logl
 end
 
+
+# function fit!(
+#     m::blblmmModel,
+#     solver = Ipopt.IpoptSolver(print_level=5)
+#     )
+#     npar = m.p + 1 + ◺(m.q) #(q * (q + 1)) >> 1
+#     # since X includes a column of 1, p is the number of mean parameters
+#     # the cholesky factor for the qxq random effect mx has (q * (q + 1)) / 2 values,
+#     # the arithmetic shift right operation has the effect of division by 2^n, here n = 1
+#     # then there is the error variance
+
+#     # mean effects and intercept (p + 1), random effect covariance (q * q), error variance (1)
+#     optm = MathProgBase.NonlinearModel(solver)
+#     lb = fill(-Inf, npar) # error variance should be nonnegative, will fix later
+#     ub = fill( Inf, npar)
+#     MathProgBase.loadproblem!(optm, npar, 0, lb, ub, Float64[], Float64[], :Max, m)
+#     # starting point
+#     par0 = zeros(npar)
+#     modelpar_to_optimpar!(par0, m)
+#     MathProgBase.setwarmstart!(optm, par0)
+#     # optimize
+#     MathProgBase.optimize!(optm)
+#     # print("after optimize!, getsolution(optm) = ", MathProgBase.getsolution(optm), "\n")
+#     optstat = MathProgBase.status(optm)
+#     optstat == :Optimal || @warn("Optimization unsuccesful; got $optstat")
+#     # refresh gradient and Hessian
+#     optimpar_to_modelpar!(m, MathProgBase.getsolution(optm))
+#     loglikelihood!(m, true, true) 
+#     m
+# end
 
 function fit!(
     m::blblmmModel,
@@ -301,6 +464,16 @@ function fit!(
     optm = MathProgBase.NonlinearModel(solver)
     lb = fill(-Inf, npar) # error variance should be nonnegative, will fix later
     ub = fill( Inf, npar)
+    # σ² should be >= 0
+    lb[m.p+1] = 0
+    # diag of L >=0
+    offset = m.p + 2
+    for j in 1:m.q, i in j:m.q
+        i == j && (lb[offset] = 0)
+        offset += 1
+    end
+   
+
     MathProgBase.loadproblem!(optm, npar, 0, lb, ub, Float64[], Float64[], :Max, m)
     # starting point
     par0 = zeros(npar)
@@ -317,6 +490,38 @@ function fit!(
     m
 end
 
+# """
+#     modelpar_to_optimpar!(m, par)
+# Translate model parameters in `m` to optimization variables in `par`.
+# """
+# function modelpar_to_optimpar!(
+#     par::Vector,
+#     m::blblmmModel
+#     )
+#     copyto!(par, m.β)
+#     par[m.p+1] = log(m.σ²[1]) # take log and then exp() later to make the problem unconstrained
+    
+#     copyto!(m.ΣL, Symmetric(m.Σ))
+#     LAPACK.potrf!('L', m.ΣL)
+
+#     # # Since modelpar_to_optimpar is only called once, it's ok to allocate Σchol
+#     # Σchol = cholesky(Symmetric(m.Σ), Val(false); check = false)
+#     # # By using cholesky decomposition and optimizing L, 
+#     # # we transform the constrained opt problem (Σ is pd) to an unconstrained problem. 
+#     # # m.ΣL .= Σchol.L
+#     # copyto!(m.ΣL, Σchol.L)
+
+#     offset = m.p + 2
+#     @inbounds for j in 1:m.q
+#         par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
+#         offset += 1
+#         @inbounds for i in j+1:m.q
+#             par[offset] = m.ΣL[i, j]
+#             offset += 1
+#         end
+#     end
+#     par
+# end
 
 """
     modelpar_to_optimpar!(m, par)
@@ -327,7 +532,7 @@ function modelpar_to_optimpar!(
     m::blblmmModel
     )
     copyto!(par, m.β)
-    par[m.p+1] = log(m.σ²[1]) # take log and then exp() later to make the problem unconstrained
+    par[m.p+1] = m.σ²[1] # take log and then exp() later to make the problem unconstrained
     
     copyto!(m.ΣL, Symmetric(m.Σ))
     LAPACK.potrf!('L', m.ΣL)
@@ -341,7 +546,7 @@ function modelpar_to_optimpar!(
 
     offset = m.p + 2
     @inbounds for j in 1:m.q
-        par[offset] = log(m.ΣL[j, j]) # only the diagonal is constrained to be nonnegative
+        par[offset] = m.ΣL[j, j] # only the diagonal is constrained to be nonnegative
         offset += 1
         @inbounds for i in j+1:m.q
             par[offset] = m.ΣL[i, j]
@@ -351,6 +556,29 @@ function modelpar_to_optimpar!(
     par
 end
 
+# """
+#     optimpar_to_modelpar!(m, par)
+# Translate optimization variables in `par` to the model parameters in `m`.
+# """
+# function optimpar_to_modelpar!(
+#     m::blblmmModel, 
+#     par::Vector)
+#     copyto!(m.β, 1, par, 1, m.p)
+#     m.σ²[1] = exp(par[m.p+1])
+#     fill!(m.ΣL, 0)
+#     offset = m.p + 2
+#     @inbounds for j in 1:m.q
+#         m.ΣL[j, j] = exp(par[offset])
+#         offset += 1
+#         @inbounds for i in j+1:m.q
+#             m.ΣL[i, j] = par[offset]
+#             offset += 1
+#         end
+#     end
+#     mul!(m.Σ, m.ΣL, transpose(m.ΣL))
+#     m
+# end
+
 """
     optimpar_to_modelpar!(m, par)
 Translate optimization variables in `par` to the model parameters in `m`.
@@ -359,11 +587,11 @@ function optimpar_to_modelpar!(
     m::blblmmModel, 
     par::Vector)
     copyto!(m.β, 1, par, 1, m.p)
-    m.σ²[1] = exp(par[m.p+1])
+    m.σ²[1] = par[m.p+1]
     fill!(m.ΣL, 0)
     offset = m.p + 2
     @inbounds for j in 1:m.q
-        m.ΣL[j, j] = exp(par[offset])
+        m.ΣL[j, j] = par[offset]
         offset += 1
         @inbounds for i in j+1:m.q
             m.ΣL[i, j] = par[offset]
@@ -396,6 +624,34 @@ function MathProgBase.eval_f(
 end
 
 
+# function MathProgBase.eval_grad_f(
+#     m::blblmmModel, 
+#     grad::Vector, 
+#     par::Vector)
+#     optimpar_to_modelpar!(m, par)
+#     loglikelihood!(m, true, false)
+#     # gradient wrt β
+#     copyto!(grad, m.∇β)
+#     # gradient wrt log(σ²)
+#     grad[m.p+1] = m.∇σ²[1] * m.σ²[1]
+#     offset = m.p + 2
+#     # gradient wrt log(diag(L)) and off-diag(L)
+#     @inbounds for j in 1:m.q
+#         # On the diagonal, gradient wrt log(ΣL[j,j])
+#         grad[offset] = m.∇L[j, j] * m.ΣL[j, j]
+#         offset += 1
+#         @inbounds for i in j+1:m.q
+#             # Off-diagonal, wrt ΣL[i,j]
+#             grad[offset] = m.∇L[i, j]
+#             offset += 1
+#         end
+#     end
+#     # print("par = ", par, "\n")
+#     # print("grad = ", grad, "\n")
+#     nothing
+# end
+
+
 function MathProgBase.eval_grad_f(
     m::blblmmModel, 
     grad::Vector, 
@@ -405,12 +661,12 @@ function MathProgBase.eval_grad_f(
     # gradient wrt β
     copyto!(grad, m.∇β)
     # gradient wrt log(σ²)
-    grad[m.p+1] = m.∇σ²[1] * m.σ²[1]
+    grad[m.p+1] = m.∇σ²[1]
     offset = m.p + 2
     # gradient wrt log(diag(L)) and off-diag(L)
     @inbounds for j in 1:m.q
         # On the diagonal, gradient wrt log(ΣL[j,j])
-        grad[offset] = m.∇L[j, j] * m.ΣL[j, j]
+        grad[offset] = m.∇L[j, j]
         offset += 1
         @inbounds for i in j+1:m.q
             # Off-diagonal, wrt ΣL[i,j]
@@ -428,8 +684,8 @@ MathProgBase.jac_structure(m::blblmmModel) = Int[], Int[]
 MathProgBase.eval_jac_g(m::blblmmModel, J, par) = nothing
 
 function MathProgBase.hesslag_structure(m::blblmmModel)
-    # Get the linear indices of the upper-triangular of the non-zero blocks
-    npar = ◺(m.p) + 1 + ◺(m.q) + ◺(◺(m.q))
+    # Get the linear indices of the UPPER-triangular of the non-zero blocks
+    npar = ◺(m.p) + 1 + ◺(◺(m.q)) + ◺(m.q)
     #       ββ    σ²σ²  σ²vech(L)   vech(L)vech(L) 
     arr1 = Vector{Int}(undef, npar)
     arr2 = Vector{Int}(undef, npar)
@@ -501,6 +757,58 @@ function MathProgBase.eval_hesslag(
     end
     @inbounds for j in 1:◺(m.q)
         H[idx] = m.Hσ²L[j] * m.σ²[1]
+        idx += 1
+        # # On the diagonal, wrt log(σ²) and log(ΣL[j,j]) 
+        # H[idx] = m.Hσ²L[j, j] * m.σ²[1]
+        # idx += 1
+        # # Off-diagonal, wrt log(σ²) and ΣL[i,j]
+        # for i in (j+1):m.q
+        #     H[idx] = m.Hσ²L[i, j] * m.σ²[1]
+        #     idx += 1
+        # end
+    end
+    lmul!(T(-1), H)
+    lmul!(σ, H)
+end
+
+
+function MathProgBase.eval_hesslag(
+    m::blblmmModel, 
+    H::Vector{T},
+    par::Vector{T}, 
+    σ::T, 
+    μ::Vector{T}) where {T}    
+    # l, q◺ = m.l, ◺(m.q)
+    optimpar_to_modelpar!(m, par)
+    # Do we need to evaluate logl here? Since hessian is always evaluated 
+    # after the gradient, can we just evaluate logl once in the gradient step?
+    loglikelihood!(m, true, true)
+    idx = 1
+    @inbounds for j in 1:m.p, i in 1:j
+        H[idx] = m.Hββ[i, j]
+        idx += 1
+    end
+    # hessian wrt log(σ²)
+    H[idx] = m.Hσ²σ²[1]
+    idx += 1
+    
+    # Since we took log of the diagonal elements, log(ΣL[j,j])
+    # we need to do scaling as follows
+    # @inbounds for (iter, icontent) in enumerate(m.diagidx)
+    #     # On the diagonal we have hessian wrt log(ΣL[j,j])
+    #     @inbounds for j in 1:m.q◺
+    #         m.HLL[icontent, j] = m.HLL[icontent, j] * m.ΣL[iter, iter]
+    #         m.HLL[j, icontent] = m.HLL[j, icontent] * m.ΣL[iter, iter]
+    #     end
+    #     m.Hσ²L[icontent] = m.Hσ²L[icontent] * m.ΣL[iter, iter]
+    # end
+
+    @inbounds for j in 1:◺(m.q), i in 1:j
+        H[idx] = m.HLL[i, j] 
+        idx += 1
+    end
+    @inbounds for j in 1:◺(m.q)
+        H[idx] = m.Hσ²L[j] 
         idx += 1
         # # On the diagonal, wrt log(σ²) and log(ΣL[j,j]) 
         # H[idx] = m.Hσ²L[j, j] * m.σ²[1]
