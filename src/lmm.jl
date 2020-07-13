@@ -720,56 +720,56 @@ function MathProgBase.hesslag_structure(m::blblmmModel)
 end
 
 
-function MathProgBase.eval_hesslag(
-    m::blblmmModel, 
-    H::Vector{T},
-    par::Vector{T}, 
-    σ::T, 
-    μ::Vector{T}) where {T}    
-    # l, q◺ = m.l, ◺(m.q)
-    optimpar_to_modelpar!(m, par)
-    # Do we need to evaluate logl here? Since hessian is always evaluated 
-    # after the gradient, can we just evaluate logl once in the gradient step?
-    loglikelihood!(m, true, true)
-    idx = 1
-    @inbounds for j in 1:m.p, i in 1:j
-        H[idx] = m.Hββ[i, j]
-        idx += 1
-    end
-    # hessian wrt log(σ²)
-    H[idx] = m.Hσ²σ²[1] * m.σ²[1]^2
-    idx += 1
+# function MathProgBase.eval_hesslag(
+#     m::blblmmModel, 
+#     H::Vector{T},
+#     par::Vector{T}, 
+#     σ::T, 
+#     μ::Vector{T}) where {T}    
+#     # l, q◺ = m.l, ◺(m.q)
+#     optimpar_to_modelpar!(m, par)
+#     # Do we need to evaluate logl here? Since hessian is always evaluated 
+#     # after the gradient, can we just evaluate logl once in the gradient step?
+#     loglikelihood!(m, true, true)
+#     idx = 1
+#     @inbounds for j in 1:m.p, i in 1:j
+#         H[idx] = m.Hββ[i, j]
+#         idx += 1
+#     end
+#     # hessian wrt log(σ²)
+#     H[idx] = m.Hσ²σ²[1] * m.σ²[1]^2
+#     idx += 1
     
-    # Since we took log of the diagonal elements, log(ΣL[j,j])
-    # we need to do scaling as follows
-    @inbounds for (iter, icontent) in enumerate(m.diagidx)
-        # On the diagonal we have hessian wrt log(ΣL[j,j])
-        @inbounds for j in 1:m.q◺
-            m.HLL[icontent, j] = m.HLL[icontent, j] * m.ΣL[iter, iter]
-            m.HLL[j, icontent] = m.HLL[j, icontent] * m.ΣL[iter, iter]
-        end
-        m.Hσ²L[icontent] = m.Hσ²L[icontent] * m.ΣL[iter, iter]
-    end
+#     # Since we took log of the diagonal elements, log(ΣL[j,j])
+#     # we need to do scaling as follows
+#     @inbounds for (iter, icontent) in enumerate(m.diagidx)
+#         # On the diagonal we have hessian wrt log(ΣL[j,j])
+#         @inbounds for j in 1:m.q◺
+#             m.HLL[icontent, j] = m.HLL[icontent, j] * m.ΣL[iter, iter]
+#             m.HLL[j, icontent] = m.HLL[j, icontent] * m.ΣL[iter, iter]
+#         end
+#         m.Hσ²L[icontent] = m.Hσ²L[icontent] * m.ΣL[iter, iter]
+#     end
 
-    @inbounds for j in 1:◺(m.q), i in 1:j
-        H[idx] = m.HLL[i, j] 
-        idx += 1
-    end
-    @inbounds for j in 1:◺(m.q)
-        H[idx] = m.Hσ²L[j] * m.σ²[1]
-        idx += 1
-        # # On the diagonal, wrt log(σ²) and log(ΣL[j,j]) 
-        # H[idx] = m.Hσ²L[j, j] * m.σ²[1]
-        # idx += 1
-        # # Off-diagonal, wrt log(σ²) and ΣL[i,j]
-        # for i in (j+1):m.q
-        #     H[idx] = m.Hσ²L[i, j] * m.σ²[1]
-        #     idx += 1
-        # end
-    end
-    lmul!(T(-1), H)
-    lmul!(σ, H)
-end
+#     @inbounds for j in 1:◺(m.q), i in 1:j
+#         H[idx] = m.HLL[i, j] 
+#         idx += 1
+#     end
+#     @inbounds for j in 1:◺(m.q)
+#         H[idx] = m.Hσ²L[j] * m.σ²[1]
+#         idx += 1
+#         # # On the diagonal, wrt log(σ²) and log(ΣL[j,j]) 
+#         # H[idx] = m.Hσ²L[j, j] * m.σ²[1]
+#         # idx += 1
+#         # # Off-diagonal, wrt log(σ²) and ΣL[i,j]
+#         # for i in (j+1):m.q
+#         #     H[idx] = m.Hσ²L[i, j] * m.σ²[1]
+#         #     idx += 1
+#         # end
+#     end
+#     lmul!(T(-1), H)
+#     lmul!(σ, H)
+# end
 
 
 function MathProgBase.eval_hesslag(

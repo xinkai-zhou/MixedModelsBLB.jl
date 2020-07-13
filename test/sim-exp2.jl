@@ -75,7 +75,7 @@ result = blb_full_data(
         subset_size = 100,
         n_subsets = 2, 
         n_boots = 2,
-        solver = Ipopt.IpoptSolver(print_level = 0),
+        solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes"),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
         #   derivative_test = "second-order", 
