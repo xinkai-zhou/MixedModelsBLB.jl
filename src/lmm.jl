@@ -452,7 +452,7 @@ end
 
 function fit!(
     m::blblmmModel,
-    solver = Ipopt.IpoptSolver(print_level=5)
+    solver = Ipopt.IpoptSolver(print_level=0, warm_start_init_point = "yes", warm_start_bound_push = 1e-9)
     )
     npar = m.p + 1 + ◺(m.q) #(q * (q + 1)) >> 1
     # since X includes a column of 1, p is the number of mean parameters
