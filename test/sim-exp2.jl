@@ -74,7 +74,7 @@ result = blb_full_data(
         cat_names = Array{String,1}(), 
         subset_size = 100,
         n_subsets = 2, 
-        n_boots = 2,
+        n_boots = 5,
         solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 

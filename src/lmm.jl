@@ -140,16 +140,15 @@ function loglikelihood!(
     # calculate the loglikelihood
     logl = n * log(2π) + (n-q) * log(σ²[1])
     @inbounds for i in 1:q
-        logl += 2 * log(obs.storage_qq_1[i, i])
-
-        # # the diag of chol may be <=0 due to numerical reasons. 
-        # # if this happens, set logl to be -Inf.
-        # if obs.storage_qq_1[i, i] <= 0
-        #     logl = -Inf
-        #     return logl
-        # else 
-        #     logl += 2 * log(obs.storage_qq_1[i, i])    
-        # end
+        # logl += 2 * log(obs.storage_qq_1[i, i])
+        # the diag of chol may be <=0 due to numerical reasons. 
+        # if this happens, set logl to be -Inf.
+        if obs.storage_qq_1[i, i] <= 0
+            logl = -Inf
+            return logl
+        else 
+            logl += 2 * log(obs.storage_qq_1[i, i])    
+        end
     end
     # the quadratic form will be used in grad too
     qf = dot(obs.storage_q_1, obs.storage_q_1)
