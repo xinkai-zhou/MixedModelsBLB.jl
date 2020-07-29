@@ -1,15 +1,17 @@
 
 # Comparing speed
 using StatsModels, Ipopt
-using Random, Distributions, DataFrames, CSV, JuliaDB
+using Random, Distributions, DataFrames #, CSV, JuliaDB
 # using MixedModels
 using MixedModelsBLB
+
+rng = MersenneTwister(1)
 
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 # datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
 Random.seed!(1)
 reps = 20
-N = 500
+N = 10000
 x1 = rand(Normal(0, 1), reps * N)
 x2 = rand(Normal(0, 3), reps * N)
 rand_slope = zeros(reps * N)
@@ -22,6 +24,12 @@ y = 1 .+ x1 + x2 + # fixed effects
     rand(Normal(0, 1), reps * N) # error, standard normal
 id = repeat(1:N, inner = reps)
 dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
+
+categorical!(dat, Symbol("id"))
+using MixedModels
+lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)
+MixedModels.fit!(lmm)
+bootstrap_ests = parametricbootstrap_sim(rng, n_boots_bootstrap, lmm; use_threads = true)
 
 # for (N, reps) in datasizes
 #    # simulate data
@@ -64,17 +72,18 @@ dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
 #     push!(blb_runtime, (time_ns() - time0)/1e9)
 #     print("LN_BOBYQA blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
 # end
-
+using BenchmarkTools
 # dat = loadtable("data/exp2-N-1000-rep-20.csv")
-result = blb_full_data(
+@btime blb_full_data(
+        rng,
         dat;
         feformula = @formula(y ~ 1 + x1 + x2),
         reformula = @formula(y ~ 1 + x1),
         id_name = "id", 
         cat_names = Array{String,1}(), 
-        subset_size = 100,
+        subset_size = 200,
         n_subsets = 2, 
-        n_boots = 5,
+        n_boots = 10,
         solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
@@ -82,9 +91,9 @@ result = blb_full_data(
         #   derivative_test_print_all = "yes",
         #   check_derivatives_for_naninf = "yes"
         # ),
-        verbose = false
+        verbose = false,
+        use_threads = true
         )
-print(result)
 # blb_runtime = Vector{Float64}()
 # for (N, reps) in datasizes
 #     time0 = time_ns()

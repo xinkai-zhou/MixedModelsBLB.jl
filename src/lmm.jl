@@ -71,7 +71,6 @@ function init_ls!(m::blblmmModel{T}, verbose::Bool = false) where T <: BlasReal
     #         m.Σ[i, i] = 1
     #     end
     # end
-    
     m
 end
 
@@ -154,7 +153,8 @@ function loglikelihood!(
     qf = dot(obs.storage_q_1, obs.storage_q_1)
     logl += σ²inv * (rtr - qf)
     logl /= -2
-    
+    obs.obj[1] = logl
+
     ###########
     # gradient
     ###########
@@ -366,9 +366,19 @@ function loglikelihood!(
     needhess::Bool = false
     ) where T <: BlasReal
     logl = zero(T)
-    @inbounds for i in eachindex(m.data)
-        logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
+    if m.use_threads
+        Threads.@threads for i in eachindex(m.data)
+            loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
+        end
+        @inbounds for i in eachindex(m.data)
+            logl += m.w[i] * m.data[i].obj[1]
+        end
+    else 
+        @inbounds for i in eachindex(m.data)
+            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
+        end
     end
+
     if needgrad
         fill!(m.∇β, 0)
         fill!(m.∇σ², 0)
@@ -471,8 +481,6 @@ function fit!(
         i == j && (lb[offset] = 0)
         offset += 1
     end
-   
-
     MathProgBase.loadproblem!(optm, npar, 0, lb, ub, Float64[], Float64[], :Max, m)
     # starting point
     par0 = zeros(npar)

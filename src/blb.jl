@@ -78,21 +78,18 @@ end
 
 """
     blb_one_subset(m; n_boots, solver, verbose)
-
 Performs Bag of Little Bootstraps on a subset. 
-
 # Positional arguments 
 - `m`: an object of the blblmmModel type
-
 # Keyword arguments
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
 - `verbose`: Bool, whether to print bootstrap progress (percentage completion)
-
 # Values
 - `subset_estimates`: an object of the SubsetEstimates type
 """
 function blb_one_subset(
+    rng::Random.AbstractRNG,
     m::blblmmModel{T};
     n_boots::Int64 = 1000,
     solver = Ipopt.IpoptSolver(),
@@ -104,7 +101,7 @@ function blb_one_subset(
     
     # Fit LMM on the subset
     fit!(m, solver)
-    verbose && print("m.Σ = ", m.Σ, "\n") 
+    # verbose && print("m.Σ = ", m.Σ, "\n") 
 
     # Initalize an instance of SubsetEstimates type for storing results
     subset_estimates = SubsetEstimates(n_boots, m.p, m.q)
@@ -117,7 +114,7 @@ function blb_one_subset(
         verbose && print("Bootstrap iteration ", k, "\n")
 
         # Parametric bootstrapping. Updates m.data[i].y for all i
-        simulate!(m, simulator)
+        simulate!(rng, m, simulator)
 
         # Get weights by drawing N i.i.d. samples from multinomial
         rand!(simulator.mult_dist, simulator.ns) 
@@ -143,6 +140,99 @@ function blb_one_subset(
     end
     return subset_estimates
 end
+
+# function replicate(f::Function, n::Integer; use_threads=false)
+#     if use_threads
+#         # no macro version yet: https://github.com/timholy/ProgressMeter.jl/issues/143
+#         # get the type
+#         rr = f()
+#         # pre-allocate
+#         results = [rr for _ in Base.OneTo(n)]
+#         Threads.@threads for idx = 2:n
+#             results[idx] = f()
+#         end
+#     else
+#         results = [f() for _ in Base.OneTo(n)]
+#     end
+#     results
+# end
+
+# """
+#     blb_one_subset(m; n_boots, solver, verbose)
+
+# Performs Bag of Little Bootstraps on a subset. 
+
+# # Positional arguments 
+# - `m`: an object of the blblmmModel type
+
+# # Keyword arguments
+# - `n_boots`: number of bootstrap iterations. Default to 1000
+# - `solver`: solver for the optimization problem. 
+# - `verbose`: Bool, whether to print bootstrap progress (percentage completion)
+
+# # Values
+# - `subset_estimates`: an object of the SubsetEstimates type
+# """
+# function blb_one_subset_2(
+#     rng::Random.AbstractRNG,
+#     m::blblmmModel{T};
+#     n_boots::Int64 = 1000,
+#     solver = Ipopt.IpoptSolver(print_level = 0),
+#     verbose::Bool = false,
+#     use_threads::Bool = false
+#     ) where T <: Real 
+
+#     print("m.β = ", m.β, "\n")
+#     print("m.data[1].y = ", m.data[1].y, "\n")
+
+#     βsc, Σsc, σ²sc, p, q, mc = similar(m.β), similar(m.Σ), similar(m.σ²), m.p, m.q, deepcopy(m)
+
+#     init_ls!(mc, verbose)
+#     print("mc.β = ", mc.β, "\n")
+#     print("mc.data[1].y = ", mc.data[1].y, "\n")
+#     simulatorc = Simulator(mc)
+
+#     mc_threads = [m]
+#     simulatorc_threads = [simulatorc]
+#     βsc_threads = [βsc]
+#     Σsc_threads = [Σsc]
+#     σ²sc_threads = [σ²sc]
+
+#     if use_threads
+#         Threads.resize_nthreads!(mc_threads)
+#         Threads.resize_nthreads!(βsc_threads)
+#         Threads.resize_nthreads!(Σsc_threads)
+#         Threads.resize_nthreads!(σ²sc_threads)
+#     end
+
+#     rnglock = ReentrantLock()
+#     samp = replicate(n_boots, use_threads = use_threads) do
+#         mod = mc_threads[Threads.threadid()]
+#         init_ls!(mod, verbose)
+#         print("mod.β = ", mod.β, "\n")
+#         print("mod.data[1].y = ", mod.data[1].y, "\n")
+#         simulator = simulatorc_threads[Threads.threadid()]
+#         local βsc = βsc_threads[Threads.threadid()]
+#         local Σsc = Σsc_threads[Threads.threadid()]
+#         local σ²sc = σ²sc_threads[Threads.threadid()]
+#         lock(rnglock)
+#         simulate!(rng, mod, simulator)
+#         rand!(simulator.mult_dist, simulator.ns) 
+#         update_w!(mod, simulator.ns)
+#         unlock(rnglock)
+#         fit!(mod, solver)
+#         (
+#             #  β = copyto!(βsc, mod.β),
+#             #  Σ = copyto!(Σsc, mod.Σ),
+#             #  σ² = copyto!(σ²sc, mod.σ²)
+#          β = copyto!(βsc, mod.β),
+#          Σ = copyto!(Σsc, mod.Σ),
+#          σ² = copyto!(σ²sc, mod.σ²)
+#         )
+#     end
+
+#     return samp
+# end
 
 
 """
@@ -251,6 +341,7 @@ Performs Bag of Little Bootstraps on the full dataset. This interface is intende
 - `result`: an object of the blbEstimates type
 """
 function blb_full_data(
+    rng::Random.AbstractRNG,
     # positional arguments
     datatable;
     # keyword arguments
@@ -262,7 +353,8 @@ function blb_full_data(
     n_subsets::Int64 = 10,
     n_boots::Int64 = 1000,
     solver = Ipopt.IpoptSolver(),
-    verbose::Bool = false
+    verbose::Bool = false,
+    use_threads::Bool = false
     )
 
     typeof(id_name) <: String && (id_name = Symbol(id_name))
@@ -300,6 +392,7 @@ function blb_full_data(
     obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
 
     runtime = Vector{Float64}(undef, n_subsets)
+    futures = Vector{Future}(undef, n_subsets)
 
     # Threads.@threads for j = 1:n_subsets
     @inbounds for j = 1:n_subsets
@@ -318,16 +411,30 @@ function blb_full_data(
         end
 
         # Construct the blblmmModel type
-        m = blblmmModel(obsvec, fenames, renames, N) 
+        m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
 
         # Run BLB on this subset
-        all_estimates[j] = blb_one_subset(
-            m;
-            n_boots = n_boots, 
-            solver = solver, 
-            verbose = verbose
-        )
+        
+        # RIGHT NOW, N_SUBSETS MUST EQUAL TO THE NUMBER OF WORKERS!!!!
+        
+        futures[j] = remotecall(blb_one_subset, j, rng, m; n_boots = n_boots, solver = solver, verbose = verbose)
+        # A remote call returns a Future to its result. Remote calls return immediately; 
+        # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
+        # You can wait for a remote call to finish by calling wait on the returned Future, 
+        # and you can obtain the full value of the result using fetch.
+
+        # all_estimates[j] = blb_one_subset(
+        #     rng,
+        #     m;
+        #     n_boots = n_boots, 
+        #     solver = solver, 
+        #     verbose = verbose
+        # )
         runtime[j] = (time_ns() - time0) / 1e9
+    end
+
+    @inbounds for j = 1:n_subsets
+        all_estimates[j] = fetch(futures[j])
     end
 
     # Create a blbEstimates instance for storing results from all subsets
@@ -335,7 +442,37 @@ function blb_full_data(
     return result
 end
 
+# struct TestResult{T <: Real}
+#     res::Vector{Matrix{T}}
+# end
 
+# function test(p::Int, m::Int, n::Int)
+#     res_vec = Vector{Matrix{Float64}}(undef, p)
+#     for i in 1:p
+#         r = remotecall(rand, i, m, n)
+#         # A remote call returns a Future to its result. Remote calls return immediately; 
+#         # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
+#         # You can wait for a remote call to finish by calling wait on the returned Future, 
+#         # and you can obtain the full value of the result using fetch.
+#         res_vec[i] = fetch(r)
+#     end
+#     test_result = TestResult(res_vec)
+# end
+
+# function test2(p::Int, m::Int, n::Int)
+#     # res_vec = Vector{Matrix{Float64}}(undef, p)
+#     rs = Vector{Future}(undef, p)
+#     for i in 1:p
+#         rs[i] = remotecall(rand, i, m, n)
+#         # A remote call returns a Future to its result. Remote calls return immediately; 
+#         # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
+#         # You can wait for a remote call to finish by calling wait on the returned Future, 
+#         # and you can obtain the full value of the result using fetch.
+#         # res_vec[i] = fetch(r)
+#     end
+#     # test_result = TestResult(res_vec)
+#     return rs
+# end
 
 function confint(subset_ests::SubsetEstimates, level::Real)
     ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
@@ -459,6 +596,5 @@ function Base.show(io::IO, blb_ests::blbEstimates)
     print("ci_β = ", ci_β, "\n")
     show(io, coeftable(blb_ests, ci_β))
 end
-
 
 

@@ -67,16 +67,16 @@ end
 
 
 function simulate!(
-    # rng::Random.AbstractRNG, 
+    rng::Random.AbstractRNG, 
     m::MixedModelsBLB.blblmmModel{T},
     simulator::Simulator{T}
     ) where T<: LinearAlgebra.BlasReal
     σ = sqrt(simulator.σ²_subset[1])
     @inbounds @views for bidx = 1:m.b
-        randn!(m.data[bidx].y) # y = standard normal error
+        randn!(rng, m.data[bidx].y) # y = standard normal error
         BLAS.axpby!(T(1), simulator.Xβ[bidx], σ, m.data[bidx].y) # y = Xβ + σ * standard normal error
         # simulate random effect: ΣL * standard normal
-        randn!(simulator.storage_q)
+        randn!(rng, simulator.storage_q)
         BLAS.gemv!('N', 1., simulator.ΣL_subset, simulator.storage_q, 0., simulator.re_storage)
         BLAS.gemv!('N', T(1), m.data[bidx].Z, simulator.re_storage, T(1), m.data[bidx].y) # y = Xβ + Zα + error
     end
