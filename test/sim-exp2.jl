@@ -4,14 +4,13 @@ using StatsModels, Ipopt
 using Random, Distributions, DataFrames #, CSV, JuliaDB
 # using MixedModels
 using MixedModelsBLB
-
+using BenchmarkTools
 rng = MersenneTwister(1)
-
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 # datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
 Random.seed!(1)
-reps = 20
-N = 10000
+reps = 10
+N = 10^3
 x1 = rand(Normal(0, 1), reps * N)
 x2 = rand(Normal(0, 3), reps * N)
 rand_slope = zeros(reps * N)
@@ -25,11 +24,32 @@ y = 1 .+ x1 + x2 + # fixed effects
 id = repeat(1:N, inner = reps)
 dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
 
-categorical!(dat, Symbol("id"))
-using MixedModels
-lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)
-MixedModels.fit!(lmm)
-bootstrap_ests = parametricbootstrap_sim(rng, n_boots_bootstrap, lmm; use_threads = true)
+# dat = loadtable("data/exp2-N-1000-rep-20.csv")
+blb_full_data(
+        rng,
+        dat;
+        feformula = @formula(y ~ 1 + x1 + x2),
+        reformula = @formula(y ~ 1 + x1),
+        id_name = "id", 
+        cat_names = Array{String,1}(), 
+        subset_size = 200,
+        n_subsets = 2, 
+        n_boots = 2,
+        solver = Ipopt.IpoptSolver(print_level=5, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
+        # solver = Ipopt.IpoptSolver(
+        #   print_level = 5, 
+        #   derivative_test = "second-order", 
+        #   derivative_test_print_all = "yes",
+        #   check_derivatives_for_naninf = "yes"
+        # ),
+        verbose = false,
+        use_threads = true
+)
+# categorical!(dat, Symbol("id"))
+# using MixedModels
+# lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)
+# MixedModels.fit!(lmm)
+# bootstrap_ests = parametricbootstrap_sim(rng, n_boots_bootstrap, lmm; use_threads = true)
 
 # for (N, reps) in datasizes
 #    # simulate data
@@ -83,8 +103,8 @@ using BenchmarkTools
         cat_names = Array{String,1}(), 
         subset_size = 200,
         n_subsets = 2, 
-        n_boots = 10,
-        solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
+        n_boots = 2,
+        solver = Ipopt.IpoptSolver(print_level=5, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
         #   derivative_test = "second-order", 
@@ -93,7 +113,7 @@ using BenchmarkTools
         # ),
         verbose = false,
         use_threads = true
-        )
+)
 # blb_runtime = Vector{Float64}()
 # for (N, reps) in datasizes
 #     time0 = time_ns()

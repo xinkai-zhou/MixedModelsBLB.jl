@@ -79,20 +79,24 @@ end
 """
     blb_one_subset(m; n_boots, solver, verbose)
 Performs Bag of Little Bootstraps on a subset. 
+
 # Positional arguments 
+- `rng`: random number generator. Default to the global rng.
 - `m`: an object of the blblmmModel type
+
 # Keyword arguments
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
-- `verbose`: Bool, whether to print bootstrap progress (percentage completion)
+- `verbose`: Bool, whether to print bootstrap progress
+
 # Values
 - `subset_estimates`: an object of the SubsetEstimates type
 """
 function blb_one_subset(
     rng::Random.AbstractRNG,
     m::blblmmModel{T};
-    n_boots::Int64 = 1000,
-    solver = Ipopt.IpoptSolver(),
+    n_boots::Int = 1000,
+    solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes"),
     verbose::Bool = false
     ) where T <: BlasReal 
 
@@ -101,7 +105,6 @@ function blb_one_subset(
     
     # Fit LMM on the subset
     fit!(m, solver)
-    # verbose && print("m.Σ = ", m.Σ, "\n") 
 
     # Initalize an instance of SubsetEstimates type for storing results
     subset_estimates = SubsetEstimates(n_boots, m.p, m.q)
@@ -118,21 +121,17 @@ function blb_one_subset(
 
         # Get weights by drawing N i.i.d. samples from multinomial
         rand!(simulator.mult_dist, simulator.ns) 
-        # print("simulator.ns[1:10] = ", simulator.ns[1:10], "\n")
         
         # Update weights in blblmmModel
         update_w!(m, simulator.ns)
         
         # Fit model on the bootstrap sample
         fit!(m, solver)
-        # print("After fitting on the bootstrap sample, m.β = ", m.β, "\n")
-        # print("m.Σ = ", m.Σ, "\n")
         
         # Save estimates
         save_bootstrap_result!(subset_estimates, k, m.β, m.Σ, m.σ²[1])
-        # print("After save_bootstrap_result, subset_estimates = ", subset_estimates, "\n")
 
-        # Reset model parameter to subset estimates as initial parameters because
+        # Reset model parameter to subset estimates because
         # using the bootstrap estimates from each iteration may be unstable.
         copyto!(m.β, simulator.β_subset)
         copyto!(m.Σ, simulator.Σ_subset)
@@ -140,6 +139,8 @@ function blb_one_subset(
     end
     return subset_estimates
 end
+blb_one_subset(m::blblmmModel; n_boots::Int = 1000, solver, verbose::Bool = false) = 
+    blb_one_subset(Random.GLOBAL_RNG, m; n_boots = n_boots, solver = solver, verbose = verbose)
 
 # function replicate(f::Function, n::Integer; use_threads=false)
 #     if use_threads
@@ -244,9 +245,6 @@ Construct the blblmmObs type
 - `data_obs`: a table object that is compatible with Tables.jl
 - `feformula`: the formula for the fixed effects
 - `reformula`: the formula for the fixed effects
-
-# Values
-- `cat_levels`: a dictionary that contains the number of levels of each categorical variable.
 """
 function blblmmobs(data_obs, feformula::FormulaTerm, reformula::FormulaTerm)
     y, X = StatsModels.modelcols(feformula, data_obs)
@@ -289,6 +287,7 @@ Draw a subset from the full dataset.
 - `cat_levels`: a dictionary that contains the number of levels of each categorical variable
 """
 function subsetting!(
+    rng::Random.AbstractRNG,
     subset_id::Vector,
     data_columns,
     id_name::Symbol,
@@ -296,12 +295,15 @@ function subsetting!(
     cat_names::Vector{String},
     cat_levels::Dict
     )
-    good_subset = false
-    while !good_subset
-        # Sample from the full dataset
-        sample!(unique_id, subset_id; replace = false)
-        # subset_indices = LinearIndices(id)[findall(in(blb_id_unique), id)]
-        if length(cat_names) > 0
+    if length(cat_names) == 0
+        sample!(rng, unique_id, subset_id; replace = false)
+    else
+        # there are categorical variables
+        good_subset = false
+        while !good_subset
+            # Sample from the full dataset
+            sample!(rng, unique_id, subset_id; replace = false)
+            # subset_indices = LinearIndices(id)[findall(in(blb_id_unique), id)]
             cat_levels_subset = data_columns |> 
                 TableOperations.filter(x -> Tables.getcolumn(x, Symbol(id_name)) .∈ Ref(Set(subset_id))) |> 
                 Tables.columns |> 
@@ -311,58 +313,66 @@ function subsetting!(
             if cat_levels_subset == cat_levels
                 good_subset = true
             end
-        else 
-            good_subset = true
         end
     end
 end
+subsetting!(subset_id::Vector, data_columns, id_name::Symbol, unique_id::Vector, cat_names::Vector{String}, cat_levels::Dict) = 
+    subsetting!(Random.GLOBAL_RNG, subset_id, data_columns, id_name, unique_id, cat_names, cat_levels) 
 
 
 """
-    blb_full_data(file, f; id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose)
+    blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose, use_threads)
 
-Performs Bag of Little Bootstraps on the full dataset. This interface is intended for larger datasets that cannot fit in memory.
+Performs Bag of Little Bootstraps on the full dataset
 
 # Positional arguments 
-- `datatable`: a data table type that is compatible with Tables.jl
+- `rng`: random number generator. Default to the global rng.
+- `datatable`: a data table type that is compatible with Tables.jl. 
 
 # Keyword arguments
 - `feformula`: model formula for the fixed effects.
 - `reformula`: model formula for the random effects.
 - `id_name`: name of the cluster identifier variable. String.
 - `cat_names`: a vector of the names of the categorical variables.
-- `subset_size`: number of clusters in the subset. Default to the square root of the total number of clusters.
+- `subset_size`: number of clusters in the subset. 
 - `n_subsets`: number of subsets.
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
 - `verbose`: Bool, whether to print bootstrap progress (percentage completion)
+- `use_threads`: Bool, whether to use multithreading. Default to false.
 
 # Values
 - `result`: an object of the blbEstimates type
 """
 function blb_full_data(
     rng::Random.AbstractRNG,
-    # positional arguments
     datatable;
-    # keyword arguments
     feformula::FormulaTerm,
     reformula::FormulaTerm,
     id_name::String,
     cat_names::Vector{String} = Vector{String}(),
-    subset_size::Int64,
-    n_subsets::Int64 = 10,
-    n_boots::Int64 = 1000,
+    subset_size::Int,
+    n_subsets::Int = 10,
+    n_boots::Int = 1000,
     solver = Ipopt.IpoptSolver(),
     verbose::Bool = false,
     use_threads::Bool = false
     )
-
+    # Create Tables.Columns type for subsequent processing
+    datatable_cols = Tables.columns(datatable)
+    # Get the unique ids, which will be used for subsetting
     typeof(id_name) <: String && (id_name = Symbol(id_name))
+    unique_id = unique(Tables.getcolumn(datatable_cols, id_name))
+    N = length(unique_id) # number of individuals/clusters in the full dataset
+    if N < subset_size
+        error(string("The subset size should be no bigger than the total number of clusters. \n", 
+                        "Total number of clusters = ", N, "\n",
+                        "Subset size = ", subset_size, "\n"))
+    end
 
     # apply df-wide schema
     feformula = apply_schema(feformula, schema(feformula, datatable))
     reformula = apply_schema(reformula, schema(reformula, datatable))
-    
     fenames = coefnames(feformula)[2]
     renames = coefnames(reformula)[2]
 
@@ -371,70 +381,83 @@ function blb_full_data(
     # 1. count the number of levels of each categorical variable in the full data;
     # 2. for each sampled subset, we check whether the number of levels match. 
     # If they do not match, the subset is resampled.
-    datatable_cols = Tables.columns(datatable)
     if length(cat_names) > 0
         cat_levels = count_levels(datatable_cols, cat_names)
     else
         cat_levels = Dict()
     end
 
-    # Get the unique ids, which will be used for subsetting
-    unique_id = unique(Tables.getcolumn(datatable_cols, id_name))
-    N = length(unique_id) # number of individuals/clusters in the full dataset
     # Initialize an array to store the unique IDs for the subset
     subset_id = Vector{eltype(unique_id)}(undef, subset_size)
-
     # Initialize a vector of SubsetEstimates for storing estimates from subsets
     all_estimates = Vector{SubsetEstimates{Float64}}(undef, n_subsets)
-
     # Initialize a vector of the blblmmObs objects
-    # ??? Float64 or some other type?
     obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
-
+    # Initialize a vector for storing the runtime
+    # Currently, runtime doesn't make sense when there are multiple workers
     runtime = Vector{Float64}(undef, n_subsets)
-    futures = Vector{Future}(undef, n_subsets)
 
-    # Threads.@threads for j = 1:n_subsets
-    @inbounds for j = 1:n_subsets
-        # https://julialang.org/blog/2019/07/multithreading
-        time0 = time_ns()
-
-        # Take a subset
-        subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
-        
-        # Construct blblmmObs objects
-        @inbounds for (i, id) in enumerate(subset_id)
-            obsvec[i] = datatable_cols |> 
-                TableOperations.filter(x -> Tables.getcolumn(x, id_name) == id) |> 
-                Tables.columns |> 
-                blblmmobs(feformula, reformula)
+    if Distributed.nworkers() > 1
+        # Using multi-processing
+        futures = Vector{Future}(undef, n_subsets)
+        # wks_schedule assigns each subset to a worker
+        wks_schedule = Vector{Int}(undef, n_subsets)
+        # nwks = Distributed.nworkers()
+        wk = 2 # note that the worker number starts from 2
+        wk_max = maximum(workers())
+        @inbounds for i = 1:n_subsets
+            wks_schedule[i] = wk
+            wk == wk_max ? wk = 2 : wk += 1
         end
-
-        # Construct the blblmmModel type
-        m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
-
-        # Run BLB on this subset
-        
-        # RIGHT NOW, N_SUBSETS MUST EQUAL TO THE NUMBER OF WORKERS!!!!
-        
-        futures[j] = remotecall(blb_one_subset, j, rng, m; n_boots = n_boots, solver = solver, verbose = verbose)
-        # A remote call returns a Future to its result. Remote calls return immediately; 
-        # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
-        # You can wait for a remote call to finish by calling wait on the returned Future, 
-        # and you can obtain the full value of the result using fetch.
-
-        # all_estimates[j] = blb_one_subset(
-        #     rng,
-        #     m;
-        #     n_boots = n_boots, 
-        #     solver = solver, 
-        #     verbose = verbose
-        # )
-        runtime[j] = (time_ns() - time0) / 1e9
-    end
-
-    @inbounds for j = 1:n_subsets
-        all_estimates[j] = fetch(futures[j])
+        @inbounds for j = 1:n_subsets
+            time0 = time_ns()
+            # Take a subset
+            subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
+            # Construct blblmmObs objects
+            @inbounds for (i, id) in enumerate(subset_id)
+                obsvec[i] = datatable_cols |> 
+                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == id) |> 
+                    Tables.columns |> 
+                    blblmmobs(feformula, reformula)
+            end
+            # Construct the blblmmModel type
+            m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
+            # Process this subset on worker "wks_schedule[j]"
+            futures[j] = remotecall(blb_one_subset, wks_schedule[j], rng, m; n_boots = n_boots, solver = solver, verbose = verbose)
+            # A remote call returns a Future to its result. Remote calls return immediately; 
+            # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
+            # You can wait for a remote call to finish by calling wait on the returned Future, 
+            # and you can obtain the full value of the result using fetch.
+            runtime[j] = (time_ns() - time0) / 1e9
+        end
+        @inbounds for j = 1:n_subsets
+            # Fetch results from workers
+            all_estimates[j] = fetch(futures[j])
+        end
+    else
+        # Not using multi-processing
+        @inbounds for j = 1:n_subsets
+            time0 = time_ns()
+            # Take a subset
+            subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
+            # Construct blblmmObs objects
+            @inbounds for (i, id) in enumerate(subset_id)
+                obsvec[i] = datatable_cols |> 
+                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == id) |> 
+                    Tables.columns |> 
+                    blblmmobs(feformula, reformula)
+            end
+            # Construct the blblmmModel type
+            m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
+            all_estimates[j] = blb_one_subset(
+                rng,
+                m;
+                n_boots = n_boots, 
+                solver = solver, 
+                verbose = verbose
+            )
+            runtime[j] = (time_ns() - time0) / 1e9
+        end
     end
 
     # Create a blbEstimates instance for storing results from all subsets
@@ -442,37 +465,13 @@ function blb_full_data(
     return result
 end
 
-# struct TestResult{T <: Real}
-#     res::Vector{Matrix{T}}
-# end
+blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name::String, 
+                cat_names::Vector{String} = Vector{String}(), subset_size::Int, n_subsets::Int = 10, n_boots::Int = 200, 
+                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false) = 
+    blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, id_name = id_name, 
+                    cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
+                    solver = solver, verbose = verbose, use_threads = use_threads)
 
-# function test(p::Int, m::Int, n::Int)
-#     res_vec = Vector{Matrix{Float64}}(undef, p)
-#     for i in 1:p
-#         r = remotecall(rand, i, m, n)
-#         # A remote call returns a Future to its result. Remote calls return immediately; 
-#         # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
-#         # You can wait for a remote call to finish by calling wait on the returned Future, 
-#         # and you can obtain the full value of the result using fetch.
-#         res_vec[i] = fetch(r)
-#     end
-#     test_result = TestResult(res_vec)
-# end
-
-# function test2(p::Int, m::Int, n::Int)
-#     # res_vec = Vector{Matrix{Float64}}(undef, p)
-#     rs = Vector{Future}(undef, p)
-#     for i in 1:p
-#         rs[i] = remotecall(rand, i, m, n)
-#         # A remote call returns a Future to its result. Remote calls return immediately; 
-#         # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
-#         # You can wait for a remote call to finish by calling wait on the returned Future, 
-#         # and you can obtain the full value of the result using fetch.
-#         # res_vec[i] = fetch(r)
-#     end
-#     # test_result = TestResult(res_vec)
-#     return rs
-# end
 
 function confint(subset_ests::SubsetEstimates, level::Real)
     ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
@@ -538,6 +537,12 @@ function vc(blb_ests::blbEstimates)
     return mean_Σ, mean_σ²
 end
 
+# Make the output nicer
+# function vctable(blb_ests::blbEstimates)
+#     mean_Σ, mean_σ² = vc(blb_ests)
+
+# end
+
 function StatsBase.coeftable(blb_ests::blbEstimates, fe_ci::Matrix)
     co = fixef(blb_ests)
     # print("co = ", co, "\n")
@@ -570,6 +575,7 @@ function Base.show(io::IO, blb_ests::blbEstimates)
 
     println("Random Effects")
     println(io)
+
     println("Estimates")
     # print("blb_ests.renames = ", blb_ests.renames, "\n")
     # print("mean_Σ = ", mean_Σ, "\n")
@@ -593,7 +599,6 @@ function Base.show(io::IO, blb_ests::blbEstimates)
 
     
     println("Fixed-effect parameters")
-    print("ci_β = ", ci_β, "\n")
     show(io, coeftable(blb_ests, ci_β))
 end
 
