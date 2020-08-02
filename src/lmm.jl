@@ -41,7 +41,7 @@ function init_ls!(m::blblmmModel{T}, verbose::Bool = false) where T <: BlasReal
         # update Xt * res
         BLAS.gemv!('N', T(-1), obs.xtx, m.β, T(1), copyto!(obs.xtr, obs.xty))
         # rss of i-th individual
-        rss += obs.yty - dot(obs.xty, m.β) - dot(obs.xtr, m.β)
+        rss += obs.yty[1] - dot(obs.xty, m.β) - dot(obs.xtr, m.β)
         # update Zi' * res
         BLAS.gemv!('N', T(-1), obs.ztx, m.β, T(1), copyto!(obs.ztr, obs.zty))
         # Zi'Zi ⊗ Zi'Zi
@@ -129,7 +129,7 @@ function loglikelihood!(
     # calculate rtr as yty - β'xty - β'xtr (reason: we will need xtr in ∇β)
     # first calculate xtr
     BLAS.gemv!('N', T(-1), obs.xtx, β, T(1), copyto!(obs.xtr, obs.xty))
-    rtr = obs.yty - dot(β, obs.xty) - dot(β, obs.xtr)
+    rtr = obs.yty[1] - dot(β, obs.xty) - dot(β, obs.xtr)
     # ztr = Z'r = -Z'Xβ + Z'y
     BLAS.gemv!('N', T(-1), obs.ztx, β, T(1), copyto!(obs.ztr, obs.zty))
     # storage_q_1 = L'Z'r

@@ -79,5 +79,12 @@ function simulate!(
         randn!(rng, simulator.storage_q)
         BLAS.gemv!('N', 1., simulator.ΣL_subset, simulator.storage_q, 0., simulator.re_storage)
         BLAS.gemv!('N', T(1), m.data[bidx].Z, simulator.re_storage, T(1), m.data[bidx].y) # y = Xβ + Zα + error
+
+        # Update quantities related to y in blblmmObs
+        m.data[bidx].yty[1] = dot(m.data[bidx].y, m.data[bidx].y)
+        BLAS.gemv!('T', T(1), m.data[bidx].X, m.data[bidx].y, T(0), m.data[bidx].xty)
+        BLAS.gemv!('T', T(1), m.data[bidx].Z, m.data[bidx].y, T(0), m.data[bidx].zty)
+        # copyto!(m.data[bidx].xty, transpose(m.data[bidx].X) * m.data[bidx].y)
+        # copyto!(m.data[bidx].zty, transpose(m.data[bidx].Z) * m.data[bidx].y)
     end
 end

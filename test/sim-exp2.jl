@@ -32,10 +32,10 @@ blb_full_data(
         reformula = @formula(y ~ 1 + x1),
         id_name = "id", 
         cat_names = Array{String,1}(), 
-        subset_size = 200,
-        n_subsets = 2, 
-        n_boots = 2,
-        solver = Ipopt.IpoptSolver(print_level=5, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
+        subset_size = 1000,
+        n_subsets = 1, 
+        n_boots = 10,
+        solver = Ipopt.IpoptSolver(print_level=5, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
         #   derivative_test = "second-order", 
@@ -45,6 +45,37 @@ blb_full_data(
         verbose = false,
         use_threads = true
 )
+
+
+# Bag of Little Boostrap (BLB) for linear mixed models.
+# Number of subsets: 10
+# Number of grouping factors per subset: 200
+# Number of bootstrap samples per subset: 200
+
+# Variance Components
+
+# Random Effects
+
+# Estimates
+# [1.0167008640232178 -0.06026265012383119; -0.06026265012383119 3.9386266702682664]
+# CI
+# [0.9304875620264564 1.1082488211825121; -0.20047398566238928 0.07820560116044499; 3.60721631905625 4.292791346539286]
+# Residual
+# Estimate
+# 1.0215493456217575
+# CI
+# [0.9926160640833874 1.0536015215390824]
+
+# Fixed-effect parameters
+# ───────────────────────────────────────
+#              Estimate    Lower    Upper
+# ───────────────────────────────────────
+# (Intercept)  0.962858  0.89903  1.0273 
+# x1           1.13259   1.00191  1.25773
+# x2           0.9994    0.99273  1.00626
+# ───────────────────────────────────────
+
+
 # categorical!(dat, Symbol("id"))
 # using MixedModels
 # lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)

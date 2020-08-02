@@ -52,7 +52,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     Hσ²L::Vector{T}   # Hessian cross term
     HLL::Matrix{T}   # Hessian wrt L
     # pre-compute
-    yty::T
+    yty::Vector{T} 
     xty::Vector{T} 
     zty::Vector{T}
     xtx::Matrix{T}  # Xi'Xi (p-by-p)
@@ -131,7 +131,7 @@ function blblmmObs(
     Hσ²L   = Vector{T}(undef, q◺)
     HLL    = Matrix{T}(undef, q◺, q◺)
     obj = Vector{T}(undef, 1)
-    yty = dot(y, y)
+    yty = [dot(y, y)]
     xty = transpose(X) * y
     zty = transpose(Z) * y
     xtx = transpose(X) * X
