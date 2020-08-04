@@ -154,7 +154,7 @@ function loglikelihood!(
     logl += σ²inv * (rtr - qf)
     logl /= -2
     obs.obj[1] = logl
-    
+
     ###########
     # gradient
     ###########
@@ -357,6 +357,12 @@ function loglikelihood!(
     # return logl
 end
 
+function update_logl_multithreaded!(m::blblmmModel{T}) where T <: BlasReal
+    Threads.@threads for obs in m.data  
+        loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+    end
+end
+
 function loglikelihood!(
     m::blblmmModel{T},
     needgrad::Bool = false,
@@ -375,9 +381,10 @@ function loglikelihood!(
         fill!(m.Hσ²L, 0)
     end
     if m.use_threads
-        Threads.@threads for obs in m.data
-            loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
-        end
+        update_logl_multithreaded!(m)
+        # Threads.@threads for obs in m.data  
+        #     loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+        # end
         @inbounds for i in eachindex(m.data)
             logl += m.w[i] * m.data[i].obj[1]
             if needgrad
