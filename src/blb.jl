@@ -414,6 +414,7 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
+            # dsubset = datatable_cols |>  TableOperations.filter(x -> Tables.getcolumn(x, id_name) \in subset_id) 
             Threads.@threads for i in 1:subset_size
                 obsvec[i] = datatable_cols |> 
                     TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 

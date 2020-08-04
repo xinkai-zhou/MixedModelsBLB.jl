@@ -357,11 +357,15 @@ function loglikelihood!(
     # return logl
 end
 
-function update_logl_multithreaded!(m::blblmmModel{T}) where T <: BlasReal
-    Threads.@threads for obs in m.data  
-        loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
-    end
-end
+# function update_logl_multithreaded!(
+#     m::blblmmModel{T}, 
+#     needgrad::Bool = false, 
+#     needhess::Bool = false
+#     ) where T <: BlasReal
+#     Threads.@threads for obs in m.data  
+#         loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+#     end
+# end
 
 function loglikelihood!(
     m::blblmmModel{T},
@@ -381,9 +385,14 @@ function loglikelihood!(
         fill!(m.Hσ²L, 0)
     end
     if m.use_threads
-        update_logl_multithreaded!(m)
-        # Threads.@threads for obs in m.data  
-        #     loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+        # update_logl_multithreaded!(m, needgrad, needhess)
+        Threads.@threads for obs in m.data  
+            loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+        end
+        # let
+        #     Threads.@threads for obs in m.data  
+        #         loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+        #     end
         # end
         @inbounds for i in eachindex(m.data)
             logl += m.w[i] * m.data[i].obj[1]
