@@ -35,7 +35,7 @@ blb_full_data(
         subset_size = 1000,
         n_subsets = 1, 
         n_boots = 10,
-        solver = Ipopt.IpoptSolver(print_level=5, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
+        solver = Ipopt.IpoptSolver(print_level=0, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, 
         #   derivative_test = "second-order", 

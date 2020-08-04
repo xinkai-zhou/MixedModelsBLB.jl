@@ -414,9 +414,9 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            @inbounds for (i, id) in enumerate(subset_id)
+            Threads.@threads for i in 1:subset_size
                 obsvec[i] = datatable_cols |> 
-                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == id) |> 
+                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
                     Tables.columns |> 
                     blblmmobs(feformula, reformula)
             end
@@ -441,9 +441,9 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            @inbounds for (i, id) in enumerate(subset_id)
+            Threads.@threads for i in 1:subset_size
                 obsvec[i] = datatable_cols |> 
-                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == id) |> 
+                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
                     Tables.columns |> 
                     blblmmobs(feformula, reformula)
             end

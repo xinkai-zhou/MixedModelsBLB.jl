@@ -154,7 +154,7 @@ function loglikelihood!(
     logl += σ²inv * (rtr - qf)
     logl /= -2
     obs.obj[1] = logl
-
+    
     ###########
     # gradient
     ###########
@@ -232,7 +232,6 @@ function loglikelihood!(
         # update ∇L
         LinearAlgebra.copytri!(obs.∇L, 'U')
     end
-
     ###########
     # hessian
     ###########
@@ -250,9 +249,7 @@ function loglikelihood!(
         # HLL
         # done above
     end
-
     logl
-
 
     # n, p, q = size(obs.X, 1), size(obs.X, 2), size(obs.Z, 2)
     # σ²inv = 1 / σ²[1] #inv(σ²)
@@ -366,65 +363,58 @@ function loglikelihood!(
     needhess::Bool = false
     ) where T <: BlasReal
     logl = zero(T)
-    if m.use_threads
-        Threads.@threads for i in eachindex(m.data)
-            loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
-        end
-        @inbounds for i in eachindex(m.data)
-            logl += m.w[i] * m.data[i].obj[1]
-        end
-    else 
-        @inbounds for i in eachindex(m.data)
-            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
-        end
-    end
-
     if needgrad
         fill!(m.∇β, 0)
         fill!(m.∇σ², 0)
         fill!(m.∇L, 0)
-        @inbounds for i in 1:length(m.data)
-            obs = m.data[i]
-            BLAS.axpy!(m.w[i], obs.∇β, m.∇β)
-            # BLAS.axpy!(m.w[i], m.data[i].∇σ², m.∇σ²)
-            m.∇σ²[1] += m.w[i] * obs.∇σ²[1]
-            BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
-            # BLAS.axpy!(m.w[i], obs.∇Σ, m.∇L)
-        end
-        # To save cost, we didn't multiply ΣL above in the expression of ∇L
-        # Here we do the multiplication
-        BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
     end
     if needhess
         fill!(m.Hββ, 0)
         fill!(m.Hσ²σ², 0)
         fill!(m.HLL, 0)
         fill!(m.Hσ²L, 0)
-        @inbounds for i in 1:length(m.data)
-            obs = m.data[i]
-            BLAS.axpy!(m.w[i], obs.Hββ, m.Hββ)
-            # BLAS.axpy!(m.w[i], obs.Hσ²σ², m.Hσ²σ²)
-            m.Hσ²σ²[1] += m.w[i] * obs.Hσ²σ²[1]
-            BLAS.axpy!(m.w[i], obs.HLL, m.HLL)
-            # BLAS.axpy!(m.w[i], obs.Hσ²Lvec, m.Hσ²L)
-            BLAS.axpy!(m.w[i], obs.Hσ²L, m.Hσ²L)
+    end
+    if m.use_threads
+        Threads.@threads for obs in m.data
+            loglikelihood!(obs, m.β, m.σ², m.ΣL, needgrad, needhess)
+        end
+        @inbounds for i in eachindex(m.data)
+            logl += m.w[i] * m.data[i].obj[1]
+            if needgrad
+                # obs = m.data[i]
+                BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
+                m.∇σ²[1] += m.w[i] * m.data[i].∇σ²[1]
+                BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
+            end
+            if needhess
+                # obs = m.data[i]
+                BLAS.axpy!(m.w[i], m.data[i].Hββ, m.Hββ)
+                m.Hσ²σ²[1] += m.w[i] * m.data[i].Hσ²σ²[1]
+                BLAS.axpy!(m.w[i], m.data[i].HLL, m.HLL)
+                BLAS.axpy!(m.w[i], m.data[i].Hσ²L, m.Hσ²L)
+            end
+        end
+    else 
+        @inbounds for i in eachindex(m.data)
+            logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
+            if needgrad
+                # obs = m.data[i]
+                BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
+                m.∇σ²[1] += m.w[i] * m.data[i].∇σ²[1]
+                BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
+            end
+            if needhess
+                # obs = m.data[i]
+                BLAS.axpy!(m.w[i], m.data[i].Hββ, m.Hββ)
+                m.Hσ²σ²[1] += m.w[i] * m.data[i].Hσ²σ²[1]
+                BLAS.axpy!(m.w[i], m.data[i].HLL, m.HLL)
+                BLAS.axpy!(m.w[i], m.data[i].Hσ²L, m.Hσ²L)
+            end
         end
     end
-    # for i in eachindex(m.data)
-    #     logl += m.w[i] * loglikelihood!(m.data[i], m.β, m.σ², m.ΣL, needgrad, needhess)
-    #     if needgrad
-    #         BLAS.axpy!(m.w[i], m.data[i].∇β, m.∇β)
-    #         BLAS.axpy!(m.w[i], m.data[i].∇σ², m.∇σ²)
-    #         # BLAS.axpy!(m.w[i], m.data[i].∇L, m.∇L)
-    #         BLAS.axpy!(m.w[i], m.data[i].∇Σ, m.∇L)
-    #     end
-    #     if needhess
-    #         BLAS.axpy!(m.w[i], m.data[i].Hββ, m.Hββ)
-    #         BLAS.axpy!(m.w[i], m.data[i].Hσ²σ², m.Hσ²σ²)
-    #         BLAS.axpy!(m.w[i], m.data[i].HLL, m.HLL)
-    #         BLAS.axpy!(m.w[i], m.data[i].Hσ²L, m.Hσ²L)
-    #     end
-    # end
+    # To save cost, we didn't multiply ΣL above in the expression of ∇L
+    # Here we do the multiplication
+    BLAS.trmm!('R', 'L', 'N', 'N', T(1), m.ΣL, m.∇L)
     logl
 end
 
