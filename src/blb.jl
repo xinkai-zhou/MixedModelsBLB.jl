@@ -414,8 +414,8 @@ function blb_full_data(
     runtime = Vector{Float64}(undef, n_subsets)
     # new way of constructing obsvec
     if newway
-        # do grouping once
-        datatable_grouped = datatable |> @groupby(_.id)
+        # do grouping once, and collect
+        datatable_grouped = datatable |> @groupby(_.id) |> collect
     end
 
     if Distributed.nworkers() > 1
