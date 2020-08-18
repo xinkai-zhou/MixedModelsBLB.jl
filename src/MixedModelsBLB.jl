@@ -17,6 +17,7 @@ using LinearAlgebra
 using Tables
 using TableOperations
 using Distributed
+using Query
 
 using LinearAlgebra: BlasReal, copytri!
 import LinearAlgebra: BlasFloat, checksquare

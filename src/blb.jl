@@ -319,6 +319,20 @@ end
 subsetting!(subset_id::Vector, data_columns, id_name::Symbol, unique_id::Vector, cat_names::Vector{String}, cat_levels::Dict) = 
     subsetting!(Random.GLOBAL_RNG, subset_id, data_columns, id_name, unique_id, cat_names, cat_levels) 
 
+"""
+    x_in_y!(x, y, k)
+
+Test whether x is in y or not.
+
+# Positional arguments 
+- `x`: a value of type T
+- `y`: a vector of type T
+"""    
+function x_in_y(x::T, y::Vector{T}, k::Int) where T
+    # test whether x is in subset_id
+    result = searchsortedfirst(y, x) <= k
+end
+
 
 """
     blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose, use_threads)
@@ -356,8 +370,10 @@ function blb_full_data(
     n_boots::Int = 1000,
     solver = Ipopt.IpoptSolver(),
     verbose::Bool = false,
-    use_threads::Bool = false
+    use_threads::Bool = false,
+    newway::Bool = false
     )
+    # !!!!!!!!!!!!!! WE SHOULD BE ABLE TO AVOID CREATING datatable_cols
     # Create Tables.Columns type for subsequent processing
     datatable_cols = Tables.columns(datatable)
     # Get the unique ids, which will be used for subsetting
@@ -396,6 +412,11 @@ function blb_full_data(
     # Initialize a vector for storing the runtime
     # Currently, runtime doesn't make sense when there are multiple workers
     runtime = Vector{Float64}(undef, n_subsets)
+    # new way of constructing obsvec
+    if newway
+        # do grouping once
+        datatable_grouped = datatable |> @groupby(_.id)
+    end
 
     if Distributed.nworkers() > 1
         # Using multi-processing
@@ -409,17 +430,22 @@ function blb_full_data(
             wks_schedule[i] = wk
             wk == wk_max ? wk = 2 : wk += 1
         end
+        
         @inbounds for j = 1:n_subsets
             time0 = time_ns()
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            # dsubset = datatable_cols |>  TableOperations.filter(x -> Tables.getcolumn(x, id_name) \in subset_id) 
-            Threads.@threads for i in 1:subset_size
-                obsvec[i] = datatable_cols |> 
-                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
-                    Tables.columns |> 
-                    blblmmobs(feformula, reformula)
+            if newway
+                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+            else
+                Threads.@threads for i in 1:subset_size
+                    obsvec[i] = datatable_cols |> 
+                        TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
+                        Tables.columns |> 
+                        blblmmobs(feformula, reformula)
+                end
             end
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
@@ -442,11 +468,16 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            Threads.@threads for i in 1:subset_size
-                obsvec[i] = datatable_cols |> 
-                    TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
-                    Tables.columns |> 
-                    blblmmobs(feformula, reformula)
+            if newway
+                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+            else
+                Threads.@threads for i in 1:subset_size
+                    obsvec[i] = datatable_cols |> 
+                        TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
+                        Tables.columns |> 
+                        blblmmobs(feformula, reformula)
+                end
             end
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
@@ -468,10 +499,10 @@ end
 
 blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name::String, 
                 cat_names::Vector{String} = Vector{String}(), subset_size::Int, n_subsets::Int = 10, n_boots::Int = 200, 
-                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false) = 
+                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false, newway::Bool = false) = 
     blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, id_name = id_name, 
                     cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
-                    solver = solver, verbose = verbose, use_threads = use_threads)
+                    solver = solver, verbose = verbose, use_threads = use_threads, newway = newway)
 
 
 function confint(subset_ests::SubsetEstimates, level::Real)
