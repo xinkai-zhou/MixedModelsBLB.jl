@@ -63,7 +63,7 @@ function init_ls!(m::blblmmModel{T}, verbose::Bool = false) where T <: BlasReal
     for j in 2:m.q, i in 1:j-1
         m.ΣL[i, j] = 0
     end
-    verbose && print("in init, m.ΣL = ", m.ΣL, "\n")
+    # verbose && print("in init, m.ΣL = ", m.ΣL, "\n")
     # mul!(m.Σ, m.ΣL, transpose(m.ΣL))
     # if !isposdef(m.Σ)
     #     copyto!(m.Σ, zeros(m.q, m.q))

@@ -114,7 +114,10 @@ function blb_one_subset(
 
     # Bootstrapping
     @inbounds for k = 1:n_boots
-        verbose && print("Bootstrap iteration ", k, "\n")
+        if verbose
+            flush(stdout)
+            print("Bootstrap iteration ", k, "\n")
+        end
 
         # Parametric bootstrapping. Updates m.data[i].y for all i
         simulate!(rng, m, simulator)
@@ -430,6 +433,8 @@ function blb_full_data(
             wks_schedule[i] = wk
             wk == wk_max ? wk = 2 : wk += 1
         end
+        flush(stdout)
+        print("wks_schedule = ", wks_schedule, "\n")
         
         @inbounds for j = 1:n_subsets
             time0 = time_ns()
