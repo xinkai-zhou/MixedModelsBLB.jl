@@ -1,11 +1,51 @@
 """
-Simulator
+NonparametricBootSimulator
 
-The Simulator type holds the parameters and storages for 
+The NonparametricBootSimulator type holds the parameters and storages for 
+simulating the multinomial counts
+"""
+struct NonparametricBootSimulator{T <: LinearAlgebra.BlasReal}
+    # estimated obtained from the subset
+    β_subset::Vector{T}
+    Σ_subset::Matrix{T}
+    σ²_subset::Vector{T}
+    # for simulating multinomial counts
+    ns::Vector{Int64}
+    mult_prob::Vector{T}
+    mult_dist::Distributions.Multinomial 
+end
+    
+"""
+NonparametricBootSimulator(m)
+
+The constructor for the NonparametricBootSimulator type.
+"""
+function NonparametricBootSimulator(
+    m::blblmmModel{T},
+    ) where T <: BlasReal
+    # *_subset will not change throughout bootstrap iterations
+    β_subset = similar(m.β)
+    copyto!(β_subset, m.β)
+    Σ_subset = similar(m.Σ)
+    copyto!(Σ_subset, m.Σ)
+    σ²_subset = similar(m.σ²)
+    copyto!(σ²_subset, m.σ²)
+    
+    # initialize a vector for storing multinomial counts
+    ns = zeros(Int64, m.b) 
+    mult_prob = ones(m.b) / m.b
+    mult_dist = Multinomial(m.N, mult_prob)
+    NonparametricBootSimulator(β_subset, Σ_subset, σ²_subset, ns, mult_prob, mult_dist)
+end
+
+
+"""
+ParametricBootSimulator
+
+The ParametricBootSimulator type holds the parameters and storages for 
 simulating the response and the multinomial counts
 """
-struct Simulator{T <: LinearAlgebra.BlasReal}
-    m::MixedModelsBLB.blblmmModel{T}
+struct ParametricBootSimulator{T <: LinearAlgebra.BlasReal}
     # estimated obtained from the subset
     β_subset::Vector{T}
     Σ_subset::Matrix{T}
@@ -22,14 +62,12 @@ struct Simulator{T <: LinearAlgebra.BlasReal}
     mult_dist::Distributions.Multinomial 
 end
     
-# Constructor
 """
-    Simulator(m, b, N)
+ParametricBootSimulator(m)
 
-The constructor for  the Simulator type.
-
+The constructor for the ParametricBootSimulator type.
 """
-function Simulator(
+function ParametricBootSimulator(
     m::blblmmModel{T},
     ) where T <: BlasReal
     # *_subset will not change throughout bootstrap iterations
@@ -57,8 +95,7 @@ function Simulator(
     ns = zeros(Int64, m.b) 
     mult_prob = ones(m.b) / m.b
     mult_dist = Multinomial(m.N, mult_prob)
-    Simulator(
-        m, 
+    ParametricBootSimulator(
         β_subset, Σ_subset, ΣL_subset, σ²_subset, 
         Xβ, storage_q, re_storage,
         ns, mult_prob, mult_dist
@@ -69,7 +106,7 @@ end
 function simulate!(
     rng::Random.AbstractRNG, 
     m::MixedModelsBLB.blblmmModel{T},
-    simulator::Simulator{T}
+    simulator::ParametricBootSimulator{T}
     ) where T<: LinearAlgebra.BlasReal
     σ = sqrt(simulator.σ²_subset[1])
     @inbounds @views for bidx = 1:m.b

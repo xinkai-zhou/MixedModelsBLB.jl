@@ -77,7 +77,7 @@ end
 
 
 """
-    blb_one_subset(m; n_boots, solver, verbose)
+    blb_one_subset(rng, m; n_boots, solver, verbose, nonparametric_boot)
 Performs Bag of Little Bootstraps on a subset. 
 
 # Positional arguments 
@@ -88,6 +88,7 @@ Performs Bag of Little Bootstraps on a subset.
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
 - `verbose`: Bool, whether to print bootstrap progress
+- `nonparametric_boot`: Bool, whether to use nonparametric bootstrap
 
 # Values
 - `subset_estimates`: an object of the SubsetEstimates type
@@ -96,21 +97,26 @@ function blb_one_subset(
     rng::Random.AbstractRNG,
     m::blblmmModel{T};
     n_boots::Int = 1000,
-    solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes"),
-    verbose::Bool = false
+    solver,
+    verbose::Bool,
+    nonparametric_boot::Bool
     ) where T <: BlasReal 
 
     # Initalize model parameters
     init_ls!(m, verbose)
-    
     # Fit LMM on the subset
     fit!(m, solver)
-
     # Initalize an instance of SubsetEstimates type for storing results
     subset_estimates = SubsetEstimates(n_boots, m.p, m.q)
 
-    # construct the simulator type
-    simulator = Simulator(m)
+    # construct the simulator
+    if nonparametric_boot
+        verbose && print("Using Non-parametric Bootstrap\n")
+        simulator = NonparametricBootSimulator(m)
+    else
+        simulator = ParametricBootSimulator(m)
+        verbose && print("Using Parametric Bootstrap\n")
+    end
 
     # Bootstrapping
     @inbounds for k = 1:n_boots
@@ -119,8 +125,10 @@ function blb_one_subset(
             print("Bootstrap iteration ", k, "\n")
         end
 
-        # Parametric bootstrapping. Updates m.data[i].y for all i
-        simulate!(rng, m, simulator)
+        if !nonparametric_boot
+            # Parametric bootstrapping. Updates m.data[i].y for all i
+            simulate!(rng, m, simulator)
+        end
 
         # Get weights by drawing N i.i.d. samples from multinomial
         rand!(simulator.mult_dist, simulator.ns) 
@@ -142,8 +150,8 @@ function blb_one_subset(
     end
     return subset_estimates
 end
-blb_one_subset(m::blblmmModel; n_boots::Int = 1000, solver, verbose::Bool = false) = 
-    blb_one_subset(Random.GLOBAL_RNG, m; n_boots = n_boots, solver = solver, verbose = verbose)
+blb_one_subset(m::blblmmModel; n_boots::Int = 1000, solver, verbose::Bool, nonparametric_boot::Bool) = 
+    blb_one_subset(Random.GLOBAL_RNG, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
 
 # function replicate(f::Function, n::Integer; use_threads=false)
 #     if use_threads
@@ -371,20 +379,21 @@ function blb_full_data(
     subset_size::Int,
     n_subsets::Int = 10,
     n_boots::Int = 1000,
-    solver = Ipopt.IpoptSolver(),
+    solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes"),
     verbose::Bool = false,
     use_threads::Bool = false,
-    newway::Bool = false
+    use_groupby::Bool = false,
+    nonparametric_boot::Bool = true
     )
-    # !!!!!!!!!!!!!! WE SHOULD BE ABLE TO AVOID CREATING datatable_cols
     # Create Tables.Columns type for subsequent processing
-    datatable_cols = Tables.columns(datatable)
+    datatable_cols = Tables.columns(datatable) # This step does not allocate memory
     # Get the unique ids, which will be used for subsetting
     typeof(id_name) <: String && (id_name = Symbol(id_name))
     unique_id = unique(Tables.getcolumn(datatable_cols, id_name))
+    # Same performance as: unique(Tables.columntable(TableOperations.select(datatable, id_name))[id_name])
     N = length(unique_id) # number of individuals/clusters in the full dataset
     if N < subset_size
-        error(string("The subset size should be no bigger than the total number of clusters. \n", 
+        error(string("The subset size should not be bigger than the total number of clusters. \n", 
                         "Total number of clusters = ", N, "\n",
                         "Subset size = ", subset_size, "\n"))
     end
@@ -416,7 +425,7 @@ function blb_full_data(
     # Currently, runtime doesn't make sense when there are multiple workers
     runtime = Vector{Float64}(undef, n_subsets)
     # new way of constructing obsvec
-    if newway
+    if use_groupby
         # do grouping once, and collect
         datatable_grouped = datatable |> @groupby(_.id) |> collect
     end
@@ -441,9 +450,9 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            if newway
+            if use_groupby
                 obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+                @map(blblmmobs(_, feformula, reformula)) |> collect #|> Array{blblmmObs{Float64}, 1}
             else
                 Threads.@threads for i in 1:subset_size
                     obsvec[i] = datatable_cols |> 
@@ -455,7 +464,8 @@ function blb_full_data(
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
             # Process this subset on worker "wks_schedule[j]"
-            futures[j] = remotecall(blb_one_subset, wks_schedule[j], rng, m; n_boots = n_boots, solver = solver, verbose = verbose)
+            futures[j] = remotecall(blb_one_subset, wks_schedule[j], rng, m; 
+                                    n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
             # A remote call returns a Future to its result. Remote calls return immediately; 
             # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
             # You can wait for a remote call to finish by calling wait on the returned Future, 
@@ -473,9 +483,9 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            if newway
+            if use_groupby
                 obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+                @map(blblmmobs(_, feformula, reformula)) |> collect #|> Array{blblmmObs{Float64}, 1}
             else
                 Threads.@threads for i in 1:subset_size
                     obsvec[i] = datatable_cols |> 
@@ -486,13 +496,7 @@ function blb_full_data(
             end
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
-            all_estimates[j] = blb_one_subset(
-                rng,
-                m;
-                n_boots = n_boots, 
-                solver = solver, 
-                verbose = verbose
-            )
+            all_estimates[j] = blb_one_subset(rng, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
             runtime[j] = (time_ns() - time0) / 1e9
         end
     end
@@ -504,10 +508,10 @@ end
 
 blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name::String, 
                 cat_names::Vector{String} = Vector{String}(), subset_size::Int, n_subsets::Int = 10, n_boots::Int = 200, 
-                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false, newway::Bool = false) = 
+                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false, newway::Bool = false, nonparametric_boot::Bool = true) = 
     blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, id_name = id_name, 
                     cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
-                    solver = solver, verbose = verbose, use_threads = use_threads, newway = newway)
+                    solver = solver, verbose = verbose, use_threads = use_threads, newway = newway, nonparametric_boot = nonparametric_boot)
 
 
 function confint(subset_ests::SubsetEstimates, level::Real)

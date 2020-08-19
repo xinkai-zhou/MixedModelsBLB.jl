@@ -1,5 +1,6 @@
 
 # Comparing speed
+using JuliaDB
 using StatsModels, Ipopt
 using Random, Distributions, DataFrames #, CSV, JuliaDB
 # using MixedModels
@@ -24,27 +25,18 @@ y = 1 .+ x1 + x2 + # fixed effects
 id = repeat(1:N, inner = reps)
 dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
 
-# dat = loadtable("data/exp2-N-1000-rep-20.csv")
+# dat = JuliaDB.loadtable("test/data/exp2-N-1000-rep-20.csv")
 blb_full_data(
-        rng,
-        dat;
+        rng,dat;
         feformula = @formula(y ~ 1 + x1 + x2),
         reformula = @formula(y ~ 1 + x1),
-        id_name = "id", 
-        cat_names = Array{String,1}(), 
-        subset_size = 1000,
-        n_subsets = 5, 
-        n_boots = 10,
+        id_name = "id", cat_names = Array{String,1}(), 
+        subset_size = 1000, n_subsets = 5, n_boots = 10,
         solver = Ipopt.IpoptSolver(print_level=0, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         # solver = Ipopt.IpoptSolver(
-        #   print_level = 5, 
-        #   derivative_test = "second-order", 
-        #   derivative_test_print_all = "yes",
-        #   check_derivatives_for_naninf = "yes"
+        #   print_level = 5, derivative_test = "second-order", derivative_test_print_all = "yes", check_derivatives_for_naninf = "yes"
         # ),
-        verbose = false,
-        use_threads = true,
-        newway = false
+        verbose = false, use_threads = false, use_groupby = true, nonparametric_boot = true
 )
 
 
@@ -124,28 +116,28 @@ blb_full_data(
 #     push!(blb_runtime, (time_ns() - time0)/1e9)
 #     print("LN_BOBYQA blb_runtime (in seconds) at N = ", N, ", reps = ", reps, " = ", blb_runtime, "\n")
 # end
-using BenchmarkTools
-# dat = loadtable("data/exp2-N-1000-rep-20.csv")
-@btime blb_full_data(
-        rng,
-        dat;
-        feformula = @formula(y ~ 1 + x1 + x2),
-        reformula = @formula(y ~ 1 + x1),
-        id_name = "id", 
-        cat_names = Array{String,1}(), 
-        subset_size = 200,
-        n_subsets = 2, 
-        n_boots = 2,
-        solver = Ipopt.IpoptSolver(print_level=5, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
-        # solver = Ipopt.IpoptSolver(
-        #   print_level = 5, 
-        #   derivative_test = "second-order", 
-        #   derivative_test_print_all = "yes",
-        #   check_derivatives_for_naninf = "yes"
-        # ),
-        verbose = false,
-        use_threads = true
-)
+# using BenchmarkTools
+# # dat = loadtable("data/exp2-N-1000-rep-20.csv")
+# @btime blb_full_data(
+#         rng,
+#         dat;
+#         feformula = @formula(y ~ 1 + x1 + x2),
+#         reformula = @formula(y ~ 1 + x1),
+#         id_name = "id", 
+#         cat_names = Array{String,1}(), 
+#         subset_size = 200,
+#         n_subsets = 2, 
+#         n_boots = 2,
+#         solver = Ipopt.IpoptSolver(print_level=5, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
+#         # solver = Ipopt.IpoptSolver(
+#         #   print_level = 5, 
+#         #   derivative_test = "second-order", 
+#         #   derivative_test_print_all = "yes",
+#         #   check_derivatives_for_naninf = "yes"
+#         # ),
+#         verbose = false,
+#         use_threads = true
+# )
 # blb_runtime = Vector{Float64}()
 # for (N, reps) in datasizes
 #     time0 = time_ns()
