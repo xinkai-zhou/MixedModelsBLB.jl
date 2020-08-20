@@ -346,7 +346,7 @@ end
 
 
 """
-    blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose, use_threads)
+    blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose, use_threads, use_groupby, nonparametric_boot)
 
 Performs Bag of Little Bootstraps on the full dataset
 
@@ -365,6 +365,8 @@ Performs Bag of Little Bootstraps on the full dataset
 - `solver`: solver for the optimization problem. 
 - `verbose`: Bool, whether to print bootstrap progress (percentage completion)
 - `use_threads`: Bool, whether to use multithreading. Default to false.
+- `use_groupby`: Bool, whether to use the groupby approach to construct models
+- `nonparametric_boot`: Bool, whether to use Nonparametric bootstrap
 
 # Values
 - `result`: an object of the blbEstimates type
@@ -452,7 +454,7 @@ function blb_full_data(
             # Construct blblmmObs objects
             if use_groupby
                 obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                @map(blblmmobs(_, feformula, reformula)) |> collect #|> Array{blblmmObs{Float64}, 1}
+                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
             else
                 Threads.@threads for i in 1:subset_size
                     obsvec[i] = datatable_cols |> 
@@ -485,7 +487,7 @@ function blb_full_data(
             # Construct blblmmObs objects
             if use_groupby
                 obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                @map(blblmmobs(_, feformula, reformula)) |> collect #|> Array{blblmmObs{Float64}, 1}
+                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
             else
                 Threads.@threads for i in 1:subset_size
                     obsvec[i] = datatable_cols |> 

@@ -6,7 +6,8 @@ module PkgTest
 #include("test2.jl")
 # include("test3_benchmark.jl")
 
-include("sim-exp2.jl")
+# include("sim-exp2.jl")
+include("test-memory-profiling.jl")
 
 
 end

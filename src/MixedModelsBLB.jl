@@ -247,13 +247,13 @@ The constructor for  the blblmmModel type.
 
 """
 function blblmmModel(
-    obsvec::Vector{blblmmObs},
+    obsvec::Vector{blblmmObs{T}},
     fenames::Vector{String},
     renames::Vector{String},
     N::Int64,
     use_threads::Bool
-    )
-    T = eltype(obsvec[1].X)
+    ) where T <: BlasReal
+    # T = eltype(obsvec[1].X)
     b, p, q = length(obsvec), size(obsvec[1].X, 2), size(obsvec[1].Z, 2)
     q◺ = ◺(q)
     npar = p + 1 + (q * (q + 1)) >> 1
