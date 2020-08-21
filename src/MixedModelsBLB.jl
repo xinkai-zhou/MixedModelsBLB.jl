@@ -44,6 +44,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     y::Vector{T}
     X::Matrix{T} # X should include a column of 1's
     Z::Matrix{T}
+    n::Int
     # grad and hess
     ∇β::Vector{T}   # gradient wrt β
     ∇σ²::Vector{T}   # gradient wrt σ²
@@ -121,7 +122,8 @@ function blblmmObs(
     X::Matrix{T},
     Z::Matrix{T}
     ) where T <: BlasReal
-    n, p, q = size(X, 1), size(X, 2), size(Z, 2)
+    n, p = size(X)
+    q = size(Z, 2)
     q◺ = ◺(q)
     @assert length(y) == n "length(y) should be equal to size(X, 1)"
     ∇β     = Vector{T}(undef, p)
@@ -149,6 +151,7 @@ function blblmmObs(
     storage_qp = Matrix{T}(undef, q, p)
     blblmmObs{T}(
         y, X, Z, 
+        n,
         ∇β, ∇σ², ∇L, 
         Hββ, Hσ²σ², Hσ²L, HLL,
         yty, xty, zty, xtx, ztx, ztz, 
