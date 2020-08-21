@@ -114,8 +114,8 @@ function blb_one_subset(
         verbose && print("Using Non-parametric Bootstrap\n")
         simulator = NonparametricBootSimulator(m)
     else
-        simulator = ParametricBootSimulator(m)
         verbose && print("Using Parametric Bootstrap\n")
+        simulator = ParametricBootSimulator(m)
     end
 
     # Bootstrapping

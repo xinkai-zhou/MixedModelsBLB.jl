@@ -82,10 +82,11 @@ function ParametricBootSimulator(
     
     # Since xtβ is constant throughout simulation, we pre-compute it
     Xβ = Vector{Vector{T}}(undef, m.b)
-    @inbounds for i in 1:m.b
-        Xβ[i] = m.data[i].y
+    @inbounds @views for i in 1:m.b
+        Xβ[i] = Vector{T}(undef, m.data[i].n)
         BLAS.gemv!('N', T(1), m.data[i].X, β_subset, T(0), Xβ[i])
     end
+
     # initialize a vector for storing α 
     re_storage = Vector{T}(undef, m.q)
     storage_q = Vector{T}(undef, m.q)
