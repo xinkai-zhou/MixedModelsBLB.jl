@@ -288,7 +288,7 @@ count_levels(cat_names::Vector{String}) = data_columns -> count_levels(data_colu
 """
     subsetting!(subset_id, data_columns, id_name, unique_id, cat_names, cat_levels)
 
-Draw a subset from the full dataset.
+Draw a subset from the full dataset. Returns a sorted subset_id.
 
 # Positional arguments 
 - `subset_id`: a vector for storing the IDs of the subset
@@ -326,24 +326,25 @@ function subsetting!(
             end
         end
     end
+    sort!(subset_id)
 end
 subsetting!(subset_id::Vector, data_columns, id_name::Symbol, unique_id::Vector, cat_names::Vector{String}, cat_levels::Dict) = 
     subsetting!(Random.GLOBAL_RNG, subset_id, data_columns, id_name, unique_id, cat_names, cat_levels) 
 
 """
-    x_in_y!(x, y, k)
+    x_in_y(x, sorted_y, k)
 
-Test whether x is in y or not.
+Test whether x is in a sorted vector y or not.
 
 # Positional arguments 
 - `x`: a value of type T
-- `y`: a vector of type T
+- `y`: a sorted vector of type T
 """    
-function x_in_y(x::T, y::Vector{T}, k::Int) where T
-    # test whether x is in subset_id
-    result = searchsortedfirst(y, x) <= k
+function x_in_y(x::T, sorted_y::Vector{T}, k::Int) where T
+    # test whether x is in sorted_y
+    index = searchsortedfirst(sorted_y, x)
+    return index ≤ k && sorted_y[index] == x
 end
-
 
 """
     blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose, use_threads, use_groupby, nonparametric_boot)
@@ -454,7 +455,7 @@ function blb_full_data(
             # Construct blblmmObs objects
             if use_groupby
                 obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+                         @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
             else
                 Threads.@threads for i in 1:subset_size
                     obsvec[i] = datatable_cols |> 
@@ -487,7 +488,7 @@ function blb_full_data(
             # Construct blblmmObs objects
             if use_groupby
                 obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+                         @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
             else
                 Threads.@threads for i in 1:subset_size
                     obsvec[i] = datatable_cols |> 
