@@ -496,7 +496,10 @@ function fit!(
     MathProgBase.optimize!(optm)
     # print("after optimize!, getsolution(optm) = ", MathProgBase.getsolution(optm), "\n")
     optstat = MathProgBase.status(optm)
-    optstat == :Optimal || @warn("Optimization unsuccesful; got $optstat")
+    # optstat == :Optimal || @warn("Optimization unsuccesful; got $optstat")
+    if !(optstat == :Optimal || optstat == :FeasibleApproximate)
+        @warn("Optimization unsuccesful; got $optstat")
+    end
     # refresh gradient and Hessian
     optimpar_to_modelpar!(m, MathProgBase.getsolution(optm))
     loglikelihood!(m, true, true) 
