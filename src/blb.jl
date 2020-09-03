@@ -385,7 +385,6 @@ function blb_full_data(
     solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes"),
     verbose::Bool = false,
     use_threads::Bool = false,
-    use_groupby::Bool = false,
     nonparametric_boot::Bool = true
     )
     # Create Tables.Columns type for subsequent processing
@@ -453,17 +452,17 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            if use_groupby
-                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                         @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
-            else
-                Threads.@threads for i in 1:subset_size
-                    obsvec[i] = datatable_cols |> 
-                        TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
-                        Tables.columns |> 
-                        blblmmobs(feformula, reformula)
-                end
-            end
+            # if use_groupby
+            obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+                        @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+            # else
+            #     Threads.@threads for i in 1:subset_size
+            #         obsvec[i] = datatable_cols |> 
+            #             TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
+            #             Tables.columns |> 
+            #             blblmmobs(feformula, reformula)
+            #     end
+            # end
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
             # Process this subset on worker "wks_schedule[j]"
@@ -486,17 +485,17 @@ function blb_full_data(
             # Take a subset
             subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            if use_groupby
-                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
-                         @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
-            else
-                Threads.@threads for i in 1:subset_size
-                    obsvec[i] = datatable_cols |> 
-                        TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
-                        Tables.columns |> 
-                        blblmmobs(feformula, reformula)
-                end
-            end
+            # if use_groupby
+            obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+                        @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
+            # else
+            #     Threads.@threads for i in 1:subset_size
+            #         obsvec[i] = datatable_cols |> 
+            #             TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
+            #             Tables.columns |> 
+            #             blblmmobs(feformula, reformula)
+            #     end
+            # end
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N, use_threads) 
             all_estimates[j] = blb_one_subset(rng, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
@@ -511,10 +510,10 @@ end
 
 blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name::String, 
                 cat_names::Vector{String} = Vector{String}(), subset_size::Int, n_subsets::Int = 10, n_boots::Int = 200, 
-                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false, newway::Bool = false, nonparametric_boot::Bool = true) = 
+                solver = Ipopt.IpoptSolver(), verbose::Bool = false, use_threads::Bool = false, nonparametric_boot::Bool = true) = 
     blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, id_name = id_name, 
                     cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
-                    solver = solver, verbose = verbose, use_threads = use_threads, newway = newway, nonparametric_boot = nonparametric_boot)
+                    solver = solver, verbose = verbose, use_threads = use_threads, nonparametric_boot = nonparametric_boot)
 
 
 function confint(subset_ests::SubsetEstimates, level::Real)
