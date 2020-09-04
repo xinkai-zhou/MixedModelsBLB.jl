@@ -61,7 +61,7 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     ztx::Matrix{T}  # Zi'Xi (q-by-p)
     ztz::Matrix{T}  # Zi'Zi (q-by-q)
     # working arrays
-    obj::Vector{T}
+    # obj::Vector{T}
     xtr::Vector{T}
     ztr::Vector{T}
     storage_p::Vector{T}
@@ -133,7 +133,7 @@ function blblmmObs(
     Hσ²σ²  = Vector{T}(undef, 1)
     Hσ²L   = Vector{T}(undef, q◺)
     HLL    = Matrix{T}(undef, q◺, q◺)
-    obj = Vector{T}(undef, 1)
+    # obj = Vector{T}(undef, 1)
     yty = [dot(y, y)]
     xty = transpose(X) * y
     zty = transpose(Z) * y
@@ -155,7 +155,7 @@ function blblmmObs(
         ∇β, ∇σ², ∇L, 
         Hββ, Hσ²σ², Hσ²L, HLL,
         yty, xty, zty, xtx, ztx, ztz, 
-        obj,
+        # obj,
         xtr, ztr, storage_p, storage_q_1, storage_q_2,
         storage_qq_1, storage_qq_2, storage_qq_3,
         storage_qp
@@ -236,7 +236,7 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     # the diag indices of L
     diagidx::Vector{Int64}
     # whether to use multi-threading in evaluating the loglikelihood
-    use_threads::Bool
+    # use_threads::Bool
 end
 
 
@@ -253,8 +253,8 @@ function blblmmModel(
     obsvec::Vector{blblmmObs{T}},
     fenames::Vector{String},
     renames::Vector{String},
-    N::Int64,
-    use_threads::Bool
+    N::Int64
+    # use_threads::Bool
     ) where T <: BlasReal
     # T = eltype(obsvec[1].X)
     b, p, q = length(obsvec), size(obsvec[1].X, 2), size(obsvec[1].Z, 2)
@@ -287,8 +287,8 @@ function blblmmModel(
         N, b, p, q, q◺, w,
         β, σ², Σ, ΣL, 
         ∇β, ∇σ², ∇L, Hββ, Hσ²σ², Hσ²L, HLL,
-        xtx, xty, ztz2, ztr2, diagidx,
-        use_threads
+        xtx, xty, ztz2, ztr2, diagidx
+        # use_threads
     ) 
 end
 
