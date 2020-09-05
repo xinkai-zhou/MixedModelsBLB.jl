@@ -103,7 +103,7 @@ function blb_one_subset(
     ) where T <: BlasReal 
 
     # Initalize model parameters
-    init_ls!(m, verbose)
+    init_ls!(m)
     # Fit LMM on the subset
     fit!(m, solver)
     # Initalize an instance of SubsetEstimates type for storing results
@@ -347,7 +347,7 @@ function x_in_y(x::T, sorted_y::Vector{T}, k::Int) where T
 end
 
 """
-    blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose, use_threads, use_groupby, nonparametric_boot)
+    blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose,  nonparametric_boot)
 
 Performs Bag of Little Bootstraps on the full dataset
 
@@ -365,8 +365,6 @@ Performs Bag of Little Bootstraps on the full dataset
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
 - `verbose`: Bool, whether to print bootstrap progress (percentage completion)
-- `use_threads`: Bool, whether to use multithreading. Default to false.
-- `use_groupby`: Bool, whether to use the groupby approach to construct models
 - `nonparametric_boot`: Bool, whether to use Nonparametric bootstrap
 
 # Values
@@ -426,11 +424,8 @@ function blb_full_data(
     # Initialize a vector for storing the runtime
     # Currently, runtime doesn't make sense when there are multiple workers
     runtime = Vector{Float64}(undef, n_subsets)
-    # new way of constructing obsvec
-    if use_groupby
-        # do grouping once, and collect
-        datatable_grouped = datatable |> @groupby(_.id) |> collect
-    end
+    # do grouping once, and collect
+    datatable_grouped = datatable |> @groupby(_.id) |> collect
 
     if Distributed.nworkers() > 1
         # Using multi-processing
@@ -521,15 +516,17 @@ function confint(subset_ests::SubsetEstimates, level::Real)
     for i in 1:subset_ests.p
         ci_βs[i, :] = StatsBase.percentile(view(subset_ests.βs, :, i), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
     end
-    ◺q = ◺(subset_ests.q)
-    ci_Σs = Matrix{Float64}(undef, ◺q, 2)
+    q = subset_ests.q
+    ci_Σs = Matrix{Float64}(undef, ◺(q), 2)
     k = 1
-    # For Σ, we get the CI for the upper-triangular values.
-    @inbounds for i in 1:subset_ests.q
-        @inbounds for j in i:subset_ests.q
-            ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, j, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
-            k += 1
-        end
+    # For Σ, we get the CI for the diagonals first, then the upper off-diagonals
+    @inbounds for i in 1:q
+        ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, i, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        k += 1
+    end
+    @inbounds for i in 1:q, j in (i+1):q
+        ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, j, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        k += 1
     end
     ci_σ²s = reshape(StatsBase.percentile(subset_ests.σ²s, 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
     return ci_βs, ci_Σs, ci_σ²s
@@ -586,63 +583,69 @@ end
 
 # end
 
-function StatsBase.coeftable(blb_ests::blbEstimates, fe_ci::Matrix)
-    co = fixef(blb_ests)
-    # print("co = ", co, "\n")
-    # pvalue = 
-    # names = blb_ests.fenames
-
+function StatsBase.coeftable(ests::Vector, ci::Matrix, varnames::Vector{String})
     CoefTable(
-        hcat(reshape(co, :, 1), fe_ci[:, 1], fe_ci[:, 2]),
-        ["Estimate", "Lower", "Upper"],
-        blb_ests.fenames
+        hcat(reshape(ests, :, 1), ci[:, 1], ci[:, 2]),
+        ["Estimate", "CI Lower", "CI Upper"],
+        varnames
         # 4 # pvalcol
     )
 end
 
+function vectorize_Σ(Σ::Matrix)
+    q  = size(Σ, 1)
+    v = Vector{Float64}(undef, ◺(q))
+    idx = 1
+    # Extract the diagonals first
+    @inbounds for i in 1:q
+        v[idx] = Σ[i, i]
+        idx += 1
+    end
+    # Extract the upper off-diagonals
+    @inbounds for i in 1:q, j in (i+1):q
+        v[idx] = Σ[i, j]
+        idx += 1
+    end
+    return v
+end
+
+function vc_names(blb_ests::blbEstimates)
+    q = length(blb_ests.renames)
+    re_names = Vector{String}(undef, ◺(q))
+    idx = 1
+    # Extract the diagonals' names first
+    @inbounds for i in 1:q
+        re_names[idx] = blb_ests.renames[i]
+        idx += 1
+    end
+    # Extract the upper off-diagonals' names
+    @inbounds for i in 1:q, j in (i+1):q
+        re_names[idx] = string(blb_ests.renames[i], " : ", blb_ests.renames[j])
+        idx += 1
+    end
+    return vcat(re_names, "Residual")
+end
 
 function Base.show(io::IO, blb_ests::blbEstimates)
     println("Bag of Little Boostrap (BLB) for linear mixed models.")
     println("Number of subsets: ", blb_ests.n_subsets)
     println("Number of grouping factors per subset: ", blb_ests.subset_size)
     println("Number of bootstrap samples per subset: ", blb_ests.n_boots)
+    println("Confidence interval level: 95%")
     println(io)
 
-    # calculate all CIs
+    # calculate all CIs and mean estimates
     ci_β, ci_Σ, ci_σ² = confint(blb_ests)
-    cnames = ["lower" "upper"]
-
-    println("Variance Components")
+    mean_β = fixef(blb_ests)
     mean_Σ, mean_σ² = vc(blb_ests)
-    println(io)
 
-    println("Random Effects")
-    println(io)
-
-    println("Estimates")
-    # print("blb_ests.renames = ", blb_ests.renames, "\n")
-    # print("mean_Σ = ", mean_Σ, "\n")
-    # show(io, [Text.(reshape(blb_ests.renames, 1, :)); mean_Σ])
-    show(io, mean_Σ)
-    println(io)
-    println("CI")
-    # show(io, [Text.(cnames); ci_Σ])
-    show(io, ci_Σ)
-    println(io)
-
-    println("Residual")
-    println("Estimate")
-    show(io, mean_σ²)
-    println(io)
-    println("CI")
-    # show(io, [Text.(cnames); ci_σ²])
-    show(io, ci_σ²)
+    println("Variance Components parameters")
+    show(io, coeftable(vcat(vectorize_Σ(mean_Σ), mean_σ²), vcat(ci_Σ, ci_σ²), vc_names(blb_ests)))
     println(io)
     println(io)
-
     
     println("Fixed-effect parameters")
-    show(io, coeftable(blb_ests, ci_β))
+    show(io, coeftable(vec(mean_β), ci_β, blb_ests.fenames))
 end
 
 

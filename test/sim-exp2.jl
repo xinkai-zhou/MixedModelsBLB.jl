@@ -26,8 +26,8 @@ id = repeat(1:N, inner = reps)
 dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
 
 # dat = JuliaDB.loadtable("test/data/exp2-N-1000-rep-20.csv")
-blb_full_data(
-        rng,dat;
+result = blb_full_data(
+        rng,dat; 
         feformula = @formula(y ~ 1 + x1 + x2),
         reformula = @formula(y ~ 1 + x1),
         id_name = "id", cat_names = Array{String,1}(), 
@@ -36,7 +36,7 @@ blb_full_data(
         # solver = Ipopt.IpoptSolver(
         #   print_level = 5, derivative_test = "second-order", derivative_test_print_all = "yes", check_derivatives_for_naninf = "yes"
         # ),
-        verbose = false, use_threads = false, use_groupby = true, nonparametric_boot = true
+        verbose = true, nonparametric_boot = true
 )
 
 

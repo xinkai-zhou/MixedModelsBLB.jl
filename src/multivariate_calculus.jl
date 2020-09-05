@@ -165,6 +165,28 @@ function vech(A::AbstractVecOrMat)
     vech!(similar(A, n * m - (n * (n - 1)) >> 1), A)
 end
 
+# """
+#     vech_upper!(v::AbstractVector, A::AbstractVecOrMat)
+# Overwrite vector `v` by the entries from upper triangular part of `A`. 
+# """
+# function vech_upper!(v::AbstractVector, A::AbstractVecOrMat)
+#     m, n = size(A, 1), size(A, 2)
+#     idx = 1
+#     @inbounds for i in 1:m, j in i:n
+#         v[idx] = A[i, j]
+#         idx += 1
+#     end
+#     v
+# end
+# """
+#     vech_upper(A::AbstractVecOrMat) -> AbstractVector
+# Return the entries from upper triangular part of `A` as a vector.
+# """
+# function vech_upper(A::AbstractVecOrMat)
+#     m, n = size(A, 1), size(A, 2)
+#     vech_upper!(similar(A, n * m - (n * (n - 1)) >> 1), A)
+# end
+
 """
     Ct_At_kron_A_KC!(H, A, B)
 Overwrite `H` by `H + C'(A'⊗A)KC`, where `K` is the commutation matrix and 

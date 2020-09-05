@@ -17,7 +17,7 @@ end
 Initialize parameters of a `blblmmModel` object from the least squares estimate. 
 `m.β`, `m.ΣL`, and `m.σ²` are overwritten with the least squares estimates.
 """
-function init_ls!(m::blblmmModel{T}, verbose::Bool = false) where T <: BlasReal
+function init_ls!(m::blblmmModel{T}) where T <: BlasReal
     # p, q = size(m.data[1].X, 2), size(m.data[1].Z, 2)
     # LS estimate for β
     fill!(m.xtx, 0)
@@ -56,7 +56,7 @@ function init_ls!(m::blblmmModel{T}, verbose::Bool = false) where T <: BlasReal
     BLAS.trsv!('U', 'T', 'N', m.ztz2, copyto!(vec(m.Σ), m.ztr2))
     BLAS.trsv!('U', 'N', 'N', m.ztz2, vec(m.Σ))
     LinearAlgebra.copytri!(m.Σ, 'U')
-    verbose && print("in init, m.Σ = ", m.Σ, "\n")
+    # verbose && print("in init, m.Σ = ", m.Σ, "\n")
     # ldiv!(vec(m.ΣL), cholesky!(Symmetric(m.ztz2)), m.ztr2)
     copyto!(m.ΣL, m.Σ)
     LAPACK.potrf!('L', m.ΣL)
