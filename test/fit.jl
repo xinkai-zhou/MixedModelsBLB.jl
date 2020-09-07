@@ -40,11 +40,25 @@ end
 
 # form a LmmModel instance
 lmm = blblmmModel(obsvec, fenames, renames, N)
+obsN = lmm.data[N]
 
 # Data was simulated correctly
-@test lmm.data[N].y[1] ≈ -13.248956453781018
+@test obsN.y[1] ≈ -13.248956453781018 atol = 1e-5
 
-# 
 @testset "loglikelihood!()" begin
+    @test loglikelihood!(obsN, βtrue, [σ²true], Ltrue, true, true) ≈ -10.753503805549846 atol = 1e-5
     
+    init_ls!(lmm)
+    @test loglikelihood!(lmm, true, true) ≈ -1090.2939385079767 atol = 1e-5
+end
+
+@testset "fit!()" begin
+    fit!(lmm)
+    @test loglikelihood!(lmm, true, false) ≈ -994.0524142638102 atol = 1e-5
+
+    @test lmm.β[1] ≈ 0.20516618221633012 atol = 1e-5
+
+    @test norm(lmm.∇β) < 1e-5
+    @test norm(lmm.∇σ²) < 1e-5
+    @test norm(lmm.∇L) < 1e-5
 end
