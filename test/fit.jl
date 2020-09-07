@@ -62,3 +62,5 @@ end
     @test norm(lmm.∇σ²) < 1e-5
     @test norm(lmm.∇L) < 1e-5
 end
+
+end

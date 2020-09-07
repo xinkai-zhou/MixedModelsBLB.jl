@@ -47,3 +47,5 @@ ci_β, ci_Σ, ci_σ² = confint(result)
     @test ci_Σ[1, 1] ≈ 0.9661250850647901 atol = 1e-5
     @test ci_σ²[1, 1] ≈ 0.9747415666101469 atol = 1e-5
 end
+
+end
