@@ -9,6 +9,7 @@ Random.seed!(123)
 N = 1000; reps = 10
 x1 = rand(Normal(0, 1), reps * N)
 x2 = rand(Normal(0, 1), reps * N)
+x3 = repeat(["M", "F"], inner = reps * N >> 1)
 rand_slope = zeros(reps * N)
 for j in 1:N
     rand_slope[(reps * (j-1) + 1) : reps * j] = x1[(reps * (j-1) + 1) : reps * j] .* rand(Normal(0, 1), 1)
@@ -18,12 +19,12 @@ y = 1 .+ x1 + x2 + # fixed effects
     rand_slope +
     rand(Normal(0, 1), reps * N) # error, standard normal
 id = repeat(1:N, inner = reps)
-dat = DataFrame(y = y, x1 = x1, x2 = x2, id = id)
+dat = DataFrame(y = y, x1 = x1, x2 = x2, x3 = x3, id = id)
 
 result = blb_full_data(
         MersenneTwister(1),
         dat; 
-        feformula = @formula(y ~ 1 + x1 + x2),
+        feformula = @formula(y ~ 1 + x1 + x2 + x3),
         reformula = @formula(y ~ 1 + x1),
         id_name = "id", 
         cat_names = Array{String,1}(), 
