@@ -40,6 +40,27 @@ result = blb_full_data(
 )
 
 
+
+# sleepstudy
+using MixedModelsBLB, JuliaDB, StatsModels, Random
+dtable = JuliaDB.loadtable("test/data/sleepstudy.csv"; distributed = false)
+solver = Ipopt.IpoptSolver(print_level=5, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9)
+blb_ests = blb_full_data(
+        # MersenneTwister(i),
+        MersenneTwister(1),
+        dtable;
+        feformula   = @formula(Reaction ~ 1 + Days),
+        reformula   = @formula(Reaction ~ 1 + Days),
+        id_name     = "id", 
+        cat_names   = Array{String,1}(), 
+        subset_size = 10,
+        n_subsets   = 1, 
+        n_boots     = 5,
+        solver      = solver,
+        verbose     = false,
+        nonparametric_boot = true
+    )
+
 # categorical!(dat, Symbol("id"))
 # using MixedModels
 # lmm = LinearMixedModel(@formula(y ~ x1 + x2 + (1 + x1 | id)), dat)

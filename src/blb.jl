@@ -401,8 +401,27 @@ function blb_full_data(
     # apply df-wide schema
     feformula = apply_schema(feformula, schema(feformula, datatable))
     reformula = apply_schema(reformula, schema(reformula, datatable))
-    fenames = coefnames(feformula)[2]
-    renames = coefnames(reformula)[2]
+    
+    #fenames = coefnames(feformula)[2]
+    if typeof(coefnames(feformula)[2]) == String
+        fenames = [coefnames(feformula)[2]]
+    else
+        fenames = coefnames(feformula)[2]
+    end
+
+    if typeof(coefnames(reformula)[2]) == String
+        renames = [coefnames(reformula)[2]]
+    else
+        renames = coefnames(reformula)[2]
+    end
+    
+    # f = @formula(y ~ 1+a)
+    # f = apply_schema(f, schema(f, df))
+    # if typeof(coefnames(f)[2]) == String
+    #     renames = [coefnames(f)[2]]
+    # else
+    #     renames = coefnames(f)[2]
+    # end
 
     # By chance, some factors of a categorical variable may not show up in a subset. 
     # To make sure this does not happen, we
