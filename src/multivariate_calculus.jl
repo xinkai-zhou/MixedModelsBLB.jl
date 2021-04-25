@@ -25,8 +25,7 @@ end
 
 """
     kron_axpy!(A, X, Y)
-Overwrite `Y` with `A ⊗ X + Y`. Same as `Y += kron(A, X)` but
-more memory efficient.
+Overwrite `Y` with `A ⊗ X + Y`. Same as `Y += kron(A, X)` but more memory efficient.
 """
 function kron_axpy!(
     A::AbstractVecOrMat{T},
@@ -57,8 +56,7 @@ end
 
 """
     kr_axpy!(A, X, Y)
-Overwrite `Y` with `A ⊙ X + Y`, where `⊙` stands for the Khatri-Rao (columnwise 
-Kronecker) product. `A` and `X` need to have same number of columns.
+Overwrite `Y` with `A ⊙ X + Y`, where `⊙` stands for the Khatri-Rao (columnwise Kronecker) product. `A` and `X` need to have same number of columns.
 """
 function kr_axpy!(
     A::AbstractVecOrMat{T},
@@ -102,8 +100,7 @@ end
 
 """
     mul!(result, A, C::CopyMatrix)
-Right-multiplying a matrix `A` by a copying matrix is equivalent to keeping 
-the columns of `A` corresponding to the lower triangular indices.
+Right-multiplying a matrix `A` by a copying matrix is equivalent to keeping the columns of `A` corresponding to the lower triangular indices.
 """
 function LinearAlgebra.mul!(
     result :: AbstractVecOrMat,
@@ -128,8 +125,7 @@ end
 
 """
     mul!(result, Ct::Transpose{Int, CopyMatrix}, A)
-Left-multiplying a matrix `A` by transpose of a copying matrix is equivalent to 
-keeping the rows of `A` corresponding to the lower triangular indices.
+Left-multiplying a matrix `A` by transpose of a copying matrix is equivalent to keeping the rows of `A` corresponding to the lower triangular indices.
 """
 LinearAlgebra.mul!(
     result :: AbstractVecOrMat,
@@ -189,8 +185,7 @@ end
 
 """
     Ct_At_kron_A_KC!(H, A, B)
-Overwrite `H` by `H + C'(A'⊗A)KC`, where `K` is the commutation matrix and 
-`C` is the copying matrix.
+Overwrite `H` by `H + C'(A'⊗A)KC`, where `K` is the commutation matrix and `C` is the copying matrix.
 """
 function Ct_At_kron_A_KC!(H::AbstractMatrix, A::AbstractMatrix)
     q = size(A, 1)
@@ -245,8 +240,7 @@ end
 
 """
     Ct_A_kr_B!(H, A, B)
-Overwrite `H` by `H + C'(A⊙B)`, where `C` is the copying matrix and `⊙` is the 
-Khatri-Rao (column-wise Kronecker) product.
+Overwrite `H` by `H + C'(A⊙B)`, where `C` is the copying matrix and `⊙` is the Khatri-Rao (column-wise Kronecker) product.
 """
 function Ct_A_kr_B!(H, A, B)
     @assert size(A) == size(B)

@@ -1,7 +1,8 @@
 
 
 """
-update_w!(m, w)
+    update_w!(m, w)
+
 Update the weight vector `m.w` using `w`.
 """
 function update_w!(
@@ -76,7 +77,7 @@ end
 
 
 """
-loglikelihood!(obs::blblmmObs, β::Vector, σ²::Vector, ΣL::Matrix, needgrad::Bool, needhess::Bool)
+    loglikelihood!(obs::blblmmObs, β::Vector, σ²::Vector, ΣL::Matrix, needgrad::Bool, needhess::Bool)
 
 Evaluate the log-likelihood of the cluster `obs`.
 """

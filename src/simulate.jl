@@ -1,8 +1,7 @@
 """
-NonparametricBootSimulator
+    NonparametricBootSimulator
 
-The NonparametricBootSimulator type holds the parameters and storages for 
-simulating the multinomial counts
+The NonparametricBootSimulator type holds the parameters and storages for simulating the multinomial counts
 """
 struct NonparametricBootSimulator{T <: LinearAlgebra.BlasReal}
     # estimated obtained from the subset
@@ -16,9 +15,9 @@ struct NonparametricBootSimulator{T <: LinearAlgebra.BlasReal}
 end
     
 """
-NonparametricBootSimulator(m)
+    NonparametricBootSimulator(m)
 
-The constructor for the NonparametricBootSimulator type.
+The constructor for the `NonparametricBootSimulator` type.
 """
 function NonparametricBootSimulator(
     m::blblmmModel{T},
@@ -40,10 +39,9 @@ end
 
 
 """
-ParametricBootSimulator
+    ParametricBootSimulator
 
-The ParametricBootSimulator type holds the parameters and storages for 
-simulating the response and the multinomial counts
+The `ParametricBootSimulator` type holds the parameters and storages for simulating the response and the multinomial counts
 """
 struct ParametricBootSimulator{T <: LinearAlgebra.BlasReal}
     # estimated obtained from the subset
@@ -63,9 +61,9 @@ struct ParametricBootSimulator{T <: LinearAlgebra.BlasReal}
 end
     
 """
-ParametricBootSimulator(m)
+    ParametricBootSimulator(m)
 
-The constructor for the ParametricBootSimulator type.
+The constructor for the `ParametricBootSimulator` type.
 """
 function ParametricBootSimulator(
     m::blblmmModel{T},

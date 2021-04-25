@@ -1,8 +1,9 @@
 
 
 """
-SubsetEstimates
-BLB linear mixed model estimates from one subset
+    SubsetEstimates
+
+BLB linear mixed model estimates from one subset.
 """
 struct SubsetEstimates{T <: LinearAlgebra.BlasReal}
     # blb parameter
@@ -16,7 +17,12 @@ struct SubsetEstimates{T <: LinearAlgebra.BlasReal}
     σ²s::Vector{T}
 end
 
-# constructor
+
+"""
+    SubsetEstimates(n_boots, p, q)
+
+Constructor for `SubsetEstimates`.
+"""
 function SubsetEstimates(n_boots::Int64, p::Int64, q::Int64)
     # vector of vector/matrices approach
     # βs  = [Vector{Float64}(undef,  p) for _ in 1:n_boots] #Vector{Vector{Float64}}()
@@ -30,9 +36,9 @@ function SubsetEstimates(n_boots::Int64, p::Int64, q::Int64)
 end
 
 """
-blbEstimates
-BLB linear mixed model estimates, which contains 
-blb parameters and a vector of `SubsetEstimates`
+    blbEstimates
+
+BLB linear mixed model estimates, which contains blb parameters and a vector of `SubsetEstimates`.
 """
 struct blbEstimates{T <: LinearAlgebra.BlasReal}
     # blb parameters
@@ -51,12 +57,12 @@ end
 
 Save the result from one bootstrap iteration to subset_estimates
 
-# Positional arguments 
-- `subset_estimates`: an object of the SubsetEstimates type
-- `i`: update the ith element of βs, Σs and σ²s
-- `β`: parameter estimates for fixed effects
-- `Σ`: the covariance matrix of variance components
-- `σ²`: estimate of error variance 
+## Positional arguments 
+* `subset_estimates`: an object of the SubsetEstimates type
+* `i`: update the ith element of βs, Σs and σ²s
+* `β`: parameter estimates for fixed effects
+* `Σ`: the covariance matrix of variance components
+* `σ²`: estimate of error variance 
 """
 function save_bootstrap_result!(
     subset_estimates::SubsetEstimates{T},
@@ -78,6 +84,7 @@ end
 
 """
     blb_one_subset(rng, m; n_boots, solver, verbose, nonparametric_boot)
+
 Performs Bag of Little Bootstraps on a subset. 
 
 # Positional arguments 
@@ -91,7 +98,7 @@ Performs Bag of Little Bootstraps on a subset.
 - `nonparametric_boot`: Bool, whether to use nonparametric bootstrap
 
 # Values
-- `subset_estimates`: an object of the SubsetEstimates type
+- `subset_estimates`: an object of type `SubsetEstimates`
 """
 function blb_one_subset(
     rng::Random.AbstractRNG,
@@ -250,7 +257,7 @@ blb_one_subset(m::blblmmModel; n_boots::Int = 1000, solver, verbose::Bool, nonpa
 """
     blblmmobs(datatable)
 
-Construct the blblmmObs type
+Constructor for the type `blblmmObs`
 
 # Positional arguments 
 - `data_obs`: a table object that is compatible with Tables.jl
@@ -286,11 +293,12 @@ end
 count_levels(cat_names::Vector{String}) = data_columns -> count_levels(data_columns, cat_names)
 
 """
-    subsetting!(subset_id, data_columns, id_name, unique_id, cat_names, cat_levels)
+    subsetting!(rng, subset_id, data_columns, id_name, unique_id, cat_names, cat_levels)
 
-Draw a subset from the full dataset. Returns a sorted subset_id.
+Draw a subset from the full dataset. The IDs of the subset is stored in `subset_id`
 
 # Positional arguments 
+- `rng`: random number generator. Default to the global rng.
 - `subset_id`: a vector for storing the IDs of the subset
 - `data_columns`: an object of the AbstractColumns type, or a DataFrame
 - `unique_id`: a vector of the unique ID in the full data set
@@ -530,6 +538,15 @@ blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name
                     solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
 
 
+"""
+    confint(subset_ests, level)
+
+Calculate confidence intervals using estimates from one subset.
+
+# Positional arguments 
+- `subset_ests`: an object of type `SubsetEstimates`
+- `level`: confidence level, usually set to 0.95
+"""
 function confint(subset_ests::SubsetEstimates, level::Real)
     ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
     for i in 1:subset_ests.p
@@ -552,7 +569,15 @@ function confint(subset_ests::SubsetEstimates, level::Real)
 end
 
 
+"""
+    confint(blb_ests, level)
 
+Calculate confidence intervals using estimates from all subsets.
+
+# Positional arguments 
+- `blb_ests`: an object of type `blbEstimates`
+- `level`: confidence level, usually set to 0.95
+"""
 function confint(blb_ests::blbEstimates, level::Real)
     # initialize arrays for storing the CIs from each subset
     cis_βs = Array{Float64}(undef, blb_ests.all_estimates[1].p, 2, blb_ests.n_subsets) 
@@ -569,6 +594,14 @@ end
 confint(blb_ests::blbEstimates) = confint(blb_ests, 0.95)
 
 
+"""
+    fixef(blb_ests)
+
+Calculate BLB fixed effect estimates, which are averages of fixed effect estimates from all subsets
+
+# Positional arguments 
+- `blb_ests`: an object of type `blbEstimates`
+"""
 # returns fixed effect estimates
 function fixef(blb_ests::blbEstimates)
     means_βs = Matrix{Float64}(undef, blb_ests.n_subsets, blb_ests.all_estimates[1].p) # n-by-p matrix 
@@ -580,6 +613,14 @@ function fixef(blb_ests::blbEstimates)
 end
 
 
+"""
+    vc(blb_ests)
+
+Calculate BLB variance components estimates, which are averages of variance component estimates from all subsets
+
+# Positional arguments 
+- `blb_ests`: an object of type `blbEstimates`
+"""
 # returns variance components estimates
 function vc(blb_ests::blbEstimates)
     means_Σs = Array{Float64}(undef, blb_ests.all_estimates[1].q, blb_ests.all_estimates[1].q, blb_ests.n_subsets)
@@ -596,11 +637,7 @@ function vc(blb_ests::blbEstimates)
     return mean_Σ, mean_σ²
 end
 
-# Make the output nicer
-# function vctable(blb_ests::blbEstimates)
-#     mean_Σ, mean_σ² = vc(blb_ests)
 
-# end
 
 function StatsBase.coeftable(ests::Vector, ci::Matrix, varnames::Vector{String})
     CoefTable(

@@ -34,10 +34,9 @@ export Simulator, simulate! # simulate.jl
 export ◺ # multivariate_calculus.jl
 
 """
-blblmmObs
+    blblmmObs
 
-BLB linear mixed model observation type. Contains data from
-a single cluster, working arrays and so on.
+BLB linear mixed model observation type. Contains data from a single cluster, working arrays and so on.
 """
 struct blblmmObs{T <: LinearAlgebra.BlasReal}
     # data
@@ -115,7 +114,6 @@ The constructor for the blblmmObs type.
 - `y`: response vector
 - `X`: design matrix for fixed effects
 - `Z`: design matrix for random effects.
-
 """
 function blblmmObs(
     y::Vector{T},
@@ -199,10 +197,9 @@ end
 
 
 """
-blblmmModel
+    blblmmModel
 
-BLB linear mixed model type, which contains a vector of 
-`blblmmObs` as data, model parameters, and working arrays.
+BLB linear mixed model type, which contains a vector of `blblmmObs` as data, model parameters, and working arrays.
 """
 struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     # data
@@ -247,7 +244,6 @@ The constructor for  the blblmmModel type.
 
 # Positional arguments 
 - `obsvec`: a vector of type blblmmObs
-
 """
 function blblmmModel(
     obsvec::Vector{blblmmObs{T}},
