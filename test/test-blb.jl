@@ -21,6 +21,13 @@ y = 1 .+ x1 + x2 + # fixed effects
 id = repeat(1:N, inner = reps)
 dat = DataFrame(y = y, x1 = x1, x2 = x2, x3 = x3, id = id)
 
+# CSV.write("test/data/files/File1.csv", dat[1:2000, :])
+# CSV.write("test/data/files/File2.csv", dat[2001:4000, :])
+# CSV.write("test/data/files/File3.csv", dat[4001:6000, :])
+# CSV.write("test/data/files/File4.csv", dat[6001:8000, :])
+# CSV.write("test/data/files/File5.csv", dat[8001:10000, :])
+
+
 result = blb_full_data(
         MersenneTwister(1),
         dat; 
