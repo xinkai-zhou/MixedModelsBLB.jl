@@ -9,35 +9,35 @@ using BenchmarkTools
 rng = MersenneTwister(1)
 # ((Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e4), 20), (Int64(1e4), 50), (Int64(1e5), 20), (Int64(1e5), 50))
 # datasizes = ((Int64(1e4), 20), (Int64(1e4), 20)) 
-Random.seed!(1)
-reps = 10
-N = 10^3
-x1 = rand(Normal(0, 1), reps * N)
-x2 = rand(Normal(0, 3), reps * N)
-rand_slope = zeros(reps * N)
-@views for j in 1:N
-    rand_slope[(reps * (j-1) + 1) : reps * j] = x1[(reps * (j-1) + 1) : reps * j] .* rand(Normal(0, 2), 1)
-end
-y = 1 .+ x1 + x2 + # fixed effects
-    repeat(rand(Normal(0, 1), N), inner = reps) + # random intercept, standard normal
-    rand_slope +
-    rand(Normal(0, 1), reps * N) # error, standard normal
-id = repeat(1:N, inner = reps)
-dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
+# Random.seed!(1)
+# reps = 10
+# N = 10^3
+# x1 = rand(Normal(0, 1), reps * N)
+# x2 = rand(Normal(0, 3), reps * N)
+# rand_slope = zeros(reps * N)
+# @views for j in 1:N
+#     rand_slope[(reps * (j-1) + 1) : reps * j] = x1[(reps * (j-1) + 1) : reps * j] .* rand(Normal(0, 2), 1)
+# end
+# y = 1 .+ x1 + x2 + # fixed effects
+#     repeat(rand(Normal(0, 1), N), inner = reps) + # random intercept, standard normal
+#     rand_slope +
+#     rand(Normal(0, 1), reps * N) # error, standard normal
+# id = repeat(1:N, inner = reps)
+# dat = DataFrame(y=y, x1=x1, x2=x2, id=id)
 
-# dat = JuliaDB.loadtable("test/data/exp2-N-1000-rep-20.csv")
-result = blb_full_data(
-        rng,dat; 
-        feformula = @formula(y ~ 1 + x1 + x2),
-        reformula = @formula(y ~ 1 + x1),
-        id_name = "id", cat_names = Array{String,1}(), 
-        subset_size = 1000, n_subsets = 5, n_boots = 10,
-        solver = Ipopt.IpoptSolver(print_level=0, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
-        # solver = Ipopt.IpoptSolver(
-        #   print_level = 5, derivative_test = "second-order", derivative_test_print_all = "yes", check_derivatives_for_naninf = "yes"
-        # ),
-        verbose = true, nonparametric_boot = true
-)
+# # dat = JuliaDB.loadtable("test/data/exp2-N-1000-rep-20.csv")
+# result = blb_full_data(
+#         rng,dat; 
+#         feformula = @formula(y ~ 1 + x1 + x2),
+#         reformula = @formula(y ~ 1 + x1),
+#         id_name = "id", cat_names = Array{String,1}(), 
+#         subset_size = 1000, n_subsets = 5, n_boots = 10,
+#         solver = Ipopt.IpoptSolver(print_level=0, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
+#         # solver = Ipopt.IpoptSolver(
+#         #   print_level = 5, derivative_test = "second-order", derivative_test_print_all = "yes", check_derivatives_for_naninf = "yes"
+#         # ),
+#         verbose = true, nonparametric_boot = true
+# )
 
 
 

@@ -21,6 +21,7 @@ MixedModelsBLB.jl is a Julia package for analyzing massive longitudinal data usi
 Pages = [
     "man/installation.md",
     "man/quick-tutorial.md",
+    "man/detailed-usage.md",
     "man/contributing.md",
     "man/api.md",
 ]
