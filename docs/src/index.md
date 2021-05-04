@@ -11,7 +11,7 @@ MixedModelsBLB.jl is a Julia package for analyzing massive longitudinal data usi
     - Supports inputs that [integrate with the ```Tables.jl``` interface](https://github.com/JuliaData/Tables.jl/blob/main/INTEGRATIONS.md), inclusing the commonly used ```DataFrames.jl```.
     - Supports data sets that are too large to fit into the memory. 
 - Supports parallel processing.
-- Supports both gradient-based and gradient-free solvers such as [Ipopt](https://github.com/coin-or/Ipopt), [Mosek](https://github.com/MOSEK/Mosek.jl), and [Nlopt](https://github.com/JuliaOpt/NLopt.jl) through the [MathProgBase](https://github.com/JuliaOpt/MathProgBase.jl) interface. 
+- Supports both gradient-based and gradient-free solvers such as [Ipopt](https://github.com/coin-or/Ipopt), [Knitro](https://github.com/jump-dev/KNITRO.jl), and [Nlopt](https://github.com/JuliaOpt/NLopt.jl) through the [MathProgBase](https://github.com/JuliaOpt/MathProgBase.jl) interface. 
 
 
 
