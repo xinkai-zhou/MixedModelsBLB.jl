@@ -1,4 +1,7 @@
 
+# documentation
+docs/build/
+
 # archived code
 src/code_archive.jl
 
