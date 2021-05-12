@@ -47,13 +47,13 @@ mean_Σ, mean_σ² = vc(result)
 ci_β, ci_Σ, ci_σ² = confint(result)
 
 @testset "BLB Result" begin
-    @test mean_β[1] ≈ 1.059654143986634 atol = 1e-5
-    @test mean_Σ[1, 1] ≈ 1.0470306668380711 atol = 1e-5
-    @test mean_σ² ≈ 1.0062658479377924 atol = 1e-5
+    @test mean_β[1] ≈ 1.0392161008152445 atol = 1e-5
+    @test mean_Σ[1, 1] ≈ 1.0437726613058929 atol = 1e-5
+    @test mean_σ² ≈ 1.0062805854325045 atol = 1e-5
     
-    @test ci_β[1, 1] ≈ 0.9969731108403922 atol = 1e-5
-    @test ci_Σ[1, 1] ≈ 0.9661250850647901 atol = 1e-5
-    @test ci_σ²[1, 1] ≈ 0.9747415666101469 atol = 1e-5
+    @test ci_β[1, 1] ≈ 0.9333360901423816 atol = 1e-5
+    @test ci_Σ[1, 1] ≈ 0.9635025257227697 atol = 1e-5
+    @test ci_σ²[1, 1] ≈ 0.9747490128660123 atol = 1e-5
 end
 
 end
