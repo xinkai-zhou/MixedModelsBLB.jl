@@ -36,7 +36,7 @@ result = blb_full_data(
         id_name = "id", 
         cat_names = ["x3"], #Array{String,1}(), 
         subset_size = 200, 
-        n_subsets = 5, 
+        n_subsets = 1, 
         n_boots = 100,
         solver = Ipopt.IpoptSolver(print_level=0, max_iter=100, mehrotra_algorithm = "yes", warm_start_init_point = "yes", warm_start_bound_push = 1e-9),
         verbose = false, 

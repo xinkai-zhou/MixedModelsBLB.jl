@@ -138,7 +138,7 @@ function blb_one_subset(
         end
 
         # Get weights by drawing N i.i.d. samples from multinomial
-        rand!(simulator.mult_dist, simulator.ns) 
+        rand!(rng, simulator.mult_dist, simulator.ns) 
         
         # Update weights in blblmmModel
         update_w!(m, simulator.ns)
@@ -472,7 +472,7 @@ function blb_full_data(
         @inbounds for j = 1:n_subsets
             time0 = time_ns()
             # Take a subset
-            subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
+            subsetting!(rng, subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
             # if use_groupby
             obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
@@ -505,7 +505,7 @@ function blb_full_data(
         @inbounds for j = 1:n_subsets
             time0 = time_ns()
             # Take a subset
-            subsetting!(subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
+            subsetting!(rng, subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
             # if use_groupby
             obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
