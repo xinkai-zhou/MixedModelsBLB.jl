@@ -436,6 +436,7 @@ function blb_full_data(
     # 1. count the number of levels of each categorical variable in the full data;
     # 2. for each sampled subset, we check whether the number of levels match. 
     # If they do not match, the subset is resampled.
+
     if length(cat_names) > 0
         cat_levels = count_levels(datatable_cols, cat_names)
     else
@@ -536,6 +537,215 @@ blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name
     blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, id_name = id_name, 
                     cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
                     solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
+
+
+
+# work with database
+
+# estabslish a connection, filter out a subset
+# 
+
+
+
+
+"""
+    blb_db(rng, con; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose,  nonparametric_boot)
+
+Performs Bag of Little Bootstraps on databases.
+
+# Positional arguments 
+- `rng`: random number generator. Default to the global rng.
+- `con`: an object of type `MySQL.Connection` created by `DBInterface.connect`.
+- `table_name`: table name for the longitudinal data.
+
+# Keyword arguments
+- `feformula`: model formula for the fixed effects.
+- `reformula`: model formula for the random effects.
+- `id_name`: name of the cluster identifier variable. String.
+- `cat_names`: a vector of the names of the categorical variables.
+- `subset_size`: number of clusters in the subset. 
+- `n_subsets`: number of subsets.
+- `n_boots`: number of bootstrap iterations. Default to 1000
+- `solver`: solver for the optimization problem. 
+- `verbose`: Bool, whether to print bootstrap progress (percentage completion)
+- `nonparametric_boot`: Bool, whether to use Nonparametric bootstrap
+
+# Values
+- `result`: an object of the blbEstimates type
+"""
+function blb_db(
+    rng::Random.AbstractRNG,
+    con,
+    table_name::String;
+    feformula::FormulaTerm,
+    reformula::FormulaTerm,
+    id_name::String,
+    cat_names::Vector{String} = Vector{String}(),
+    subset_size::Int,
+    n_subsets::Int = 10,
+    n_boots::Int = 1000,
+    solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes"),
+    verbose::Bool = false,
+    # use_threads::Bool = false,
+    nonparametric_boot::Bool = true
+    )
+
+    # # Create Tables.Columns type for subsequent processing
+    # datatable_cols = Tables.columns(datatable) # This step does not allocate memory
+    # # Get the unique ids, which will be used for subsetting
+    # typeof(id_name) <: String && (id_name = Symbol(id_name))
+
+    query = string("SELECT ", id_name, " FROM ", table_name, ";")
+    unique_id = unique(DataFrame(DBInterface.execute(con,  query))[:, id_name])
+    N = length(unique_id)
+    if N < subset_size
+        error(string("The subset size should not be bigger than the total number of clusters. \n", 
+                        "Total number of clusters = ", N, "\n",
+                        "Subset size = ", subset_size, "\n"))
+    end
+
+    # Initialize an array to store the unique IDs for the subset
+    subset_id = Vector{eltype(unique_id)}(undef, subset_size)
+    # Initialize a vector of SubsetEstimates for storing estimates from subsets
+    all_estimates = Vector{SubsetEstimates{Float64}}(undef, n_subsets)
+    # Initialize a vector of the blblmmObs objects
+    obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
+    # Initialize a vector for storing the runtime
+    # Currently, runtime doesn't make sense when there are multiple workers
+    runtime = Vector{Float64}(undef, n_subsets)
+
+    if Distributed.nworkers() > 1
+        # Using multi-processing
+        futures = Vector{Future}(undef, n_subsets)
+        # wks_schedule assigns each subset to a worker
+        wks_schedule = Vector{Int}(undef, n_subsets)
+        # nwks = Distributed.nworkers()
+        wk = 2 # note that the worker number starts from 2
+        wk_max = maximum(workers())
+        @inbounds for i = 1:n_subsets
+            wks_schedule[i] = wk
+            wk == wk_max ? wk = 2 : wk += 1
+        end
+        flush(stdout)
+        print("wks_schedule = ", wks_schedule, "\n")
+        
+        @inbounds for j = 1:n_subsets
+            time0 = time_ns()
+            
+            # Take a subset
+            sample!(unique_id, subset_id, replace = false, ordered = true)
+
+            # create a table to store subset id. this makes the WHERE step below easier
+            subset_table = string("subset", j)
+            query = string("DROP TABLE IF EXISTS ", subset_table, ";")
+            DBInterface.execute(con,  query)
+            query = string("CREATE TABLE ", subset_table, " (id INT, INDEX(id));")
+            DBInterface.execute(con,  query)
+            for i in 1:subset_size
+                query = string("INSERT INTO ", subset_table, " VALUES (", subset_id[i], ");")
+                DBInterface.execute(con, query)
+            end 
+            # DBInterface.execute(con, "SELECT * FROM subset1") |> DataFrame
+            
+            # filter data using subset_id
+            query = string("SELECT * FROM ", table_name, " WHERE id IN (SELECT id FROM ", subset_table, ");")
+            datatable = DBInterface.execute(con,  query) |> DataFrame
+
+            # apply schema
+            feformula = apply_schema(feformula, schema(feformula, datatable))
+            reformula = apply_schema(reformula, schema(reformula, datatable))
+            
+            if typeof(coefnames(feformula)[2]) == String
+                fenames = [coefnames(feformula)[2]]
+            else
+                fenames = coefnames(feformula)[2]
+            end
+            if typeof(coefnames(reformula)[2]) == String
+                renames = [coefnames(reformula)[2]]
+            else
+                renames = coefnames(reformula)[2]
+            end
+
+            # group by id and construct obsvec
+            datatable_grouped = datatable |> @groupby(_.id) |> collect
+            obsvec = datatable_grouped|> @map(MixedModelsBLB.blblmmobs(_, feformula, reformula)) |> collect |> 
+                        Array{blblmmObs{Float64}, 1}
+            
+            # Construct the blblmmModel type
+            m = blblmmModel(obsvec, fenames, renames, N)
+
+            # Process this subset on worker "wks_schedule[j]"
+            futures[j] = remotecall(blb_one_subset, wks_schedule[j], rng, m; 
+                                    n_boots = n_boots, solver = solver, verbose = verbose, 
+                                    nonparametric_boot = nonparametric_boot)
+            # A remote call returns a Future to its result. Remote calls return immediately; 
+            # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
+            # You can wait for a remote call to finish by calling wait on the returned Future, 
+            # and you can obtain the full value of the result using fetch.
+            runtime[j] = (time_ns() - time0) / 1e9
+        end
+        @inbounds for j = 1:n_subsets
+            # Fetch results from workers
+            all_estimates[j] = fetch(futures[j])
+        end
+    else
+        # Not using multi-processing
+        @inbounds for j = 1:n_subsets
+            time0 = time_ns()
+
+            # Take a subset
+            sample!(unique_id, subset_id, replace = false, ordered = true)
+
+            # create a table to store subset id. this makes the WHERE step below easier
+            subset_table = string("subset", j)
+            query = string("DROP TABLE IF EXISTS ", subset_table, ";")
+            DBInterface.execute(con,  query)
+            query = string("CREATE TABLE ", subset_table, " (id INT, INDEX(id));")
+            DBInterface.execute(con,  query)
+            for i in 1:subset_size
+                query = string("INSERT INTO ", subset_table, " VALUES (", subset_id[i], ");")
+                DBInterface.execute(con, query)
+            end 
+            # DBInterface.execute(con, "SELECT * FROM subset1") |> DataFrame
+            
+            # filter data using subset_id
+            query = string("SELECT * FROM ", table_name, " WHERE id IN (SELECT id FROM ", subset_table, ");")
+            datatable = DBInterface.execute(con,  query) |> DataFrame
+
+            # apply schema
+            feformula = apply_schema(feformula, schema(feformula, datatable))
+            reformula = apply_schema(reformula, schema(reformula, datatable))
+            
+            if typeof(coefnames(feformula)[2]) == String
+                fenames = [coefnames(feformula)[2]]
+            else
+                fenames = coefnames(feformula)[2]
+            end
+            if typeof(coefnames(reformula)[2]) == String
+                renames = [coefnames(reformula)[2]]
+            else
+                renames = coefnames(reformula)[2]
+            end
+
+            # group by id and construct obsvec
+            datatable_grouped = datatable |> @groupby(_.id) |> collect
+            obsvec = datatable_grouped|> @map(MixedModelsBLB.blblmmobs(_, feformula, reformula)) |> collect |> 
+                        Array{blblmmObs{Float64}, 1}
+            
+            # Construct the blblmmModel type
+            m = blblmmModel(obsvec, fenames, renames, N)
+            all_estimates[j] = blb_one_subset(rng, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
+            runtime[j] = (time_ns() - time0) / 1e9
+        end
+    end
+
+    # Create a blbEstimates instance for storing results from all subsets
+    result = blbEstimates{Float64}(n_subsets, subset_size, n_boots, fenames, renames, all_estimates, runtime)
+    return result
+end
+
+
+
 
 
 """
