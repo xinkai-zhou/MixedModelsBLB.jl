@@ -28,7 +28,7 @@ import LinearAlgebra: BlasFloat, checksquare
 
 export blblmmObs, blblmmModel
 export update_w!, init_ls!, fit!, loglikelihood! # lmm.jl
-export SubsetEstimates, blbEstimates, save_bootstrap_result!, blb_one_subset, blb_full_data # blb.jl
+export SubsetEstimates, blbEstimates, save_bootstrap_result!, blb_one_subset, blb_full_data, blb_db # blb.jl
 export confint, fixef, vc, coeftable # blb.jl
 export Simulator, simulate! # simulate.jl
 export ◺ # multivariate_calculus.jl

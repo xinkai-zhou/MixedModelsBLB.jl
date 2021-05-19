@@ -555,7 +555,7 @@ Performs Bag of Little Bootstraps on databases.
 
 # Positional arguments 
 - `rng`: random number generator. Default to the global rng.
-- `con`: an object of type `MySQL.Connection` created by `DBInterface.connect`.
+- `con`: an object of type `MySQL.Connection` created by the function `DBInterface.connect`.
 - `table_name`: table name for the longitudinal data.
 
 # Keyword arguments
