@@ -68,6 +68,11 @@ git-tree-sha1 = "8e695f735fca77e9708e795eda62afdb869cbb70"
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 version = "0.3.4+0"
 
+[[DBInterface]]
+git-tree-sha1 = "441a377eb7f994cd454b7c45f29f911ce0d42ce0"
+uuid = "a10d1c49-ce27-4219-8d33-6db1a4562965"
+version = "2.4.0"
+
 [[DataAPI]]
 git-tree-sha1 = "dfb3b7e89e395be1e25c2ad6d7690dc29cc53b1d"
 uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"

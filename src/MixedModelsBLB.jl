@@ -18,6 +18,7 @@ using Tables
 using TableOperations
 using Distributed
 using Query
+using DBInterface
 
 using LinearAlgebra: BlasReal, copytri!
 import LinearAlgebra: BlasFloat, checksquare
