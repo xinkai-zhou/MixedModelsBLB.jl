@@ -583,10 +583,9 @@ function blb_db(
     nonparametric_boot::Bool = true
     )
 
-    # # Create Tables.Columns type for subsequent processing
-    # datatable_cols = Tables.columns(datatable) # This step does not allocate memory
-    # # Get the unique ids, which will be used for subsetting
-    # typeof(id_name) <: String && (id_name = Symbol(id_name))
+    # initialize two empty vectors for storage
+    fenames = String[]
+    renames = String[]
 
     query = string("SELECT DISTINCT(", id_name, ") FROM ", table_name, ";")
     unique_id = DataFrame(DBInterface.execute(con,  query))[:, id_name]
@@ -643,20 +642,32 @@ function blb_db(
             # filter data using subset_id
             query = string("SELECT * FROM ", table_name, " WHERE id IN (SELECT id FROM ", subset_table, ");")
             datatable = DBInterface.execute(con,  query) |> DataFrame
-
+            # drop the temp table
+            query = string("DROP TABLE IF EXISTS ", subset_table, ";")
+            DBInterface.execute(con,  query)
+            
             # apply schema
             feformula = apply_schema(feformula, schema(feformula, datatable))
             reformula = apply_schema(reformula, schema(reformula, datatable))
             
-            if typeof(coefnames(feformula)[2]) == String
-                fenames = [coefnames(feformula)[2]]
-            else
-                fenames = coefnames(feformula)[2]
-            end
-            if typeof(coefnames(reformula)[2]) == String
-                renames = [coefnames(reformula)[2]]
-            else
-                renames = coefnames(reformula)[2]
+            if j == 1
+                # do this once on the first subset
+                if typeof(coefnames(feformula)[2]) == String
+                    puch!(fenames, coefnames(feformula)[2])
+                else
+                    temp = coefnames(feformula)[2]
+                    for k in temp
+                        push!(fenames, k)
+                    end
+                end
+                if typeof(coefnames(reformula)[2]) == String
+                    puch!(renames, coefnames(reformula)[2])
+                else
+                    temp = coefnames(reformula)[2]
+                    for k in temp
+                        push!(renames, k)
+                    end
+                end
             end
 
             # group by id and construct obsvec
@@ -699,7 +710,6 @@ function blb_db(
                 query = string("INSERT INTO ", subset_table, " VALUES (", subset_id[i], ");")
                 DBInterface.execute(con, query)
             end 
-            # DBInterface.execute(con, "SELECT * FROM subset1") |> DataFrame
             
             # filter data using subset_id
             query = string("SELECT * FROM ", table_name, " WHERE id IN (SELECT id FROM ", subset_table, ");")
@@ -712,16 +722,25 @@ function blb_db(
             feformula = apply_schema(feformula, schema(feformula, datatable))
             reformula = apply_schema(reformula, schema(reformula, datatable))
             
-            if typeof(coefnames(feformula)[2]) == String
-                fenames = [coefnames(feformula)[2]]
-            else
-                fenames = coefnames(feformula)[2]
-            end
-            if typeof(coefnames(reformula)[2]) == String
-                renames = [coefnames(reformula)[2]]
-            else
-                renames = coefnames(reformula)[2]
-            end
+            if j == 1
+                # do this once on the first subset
+                if typeof(coefnames(feformula)[2]) == String
+                    puch!(fenames, coefnames(feformula)[2])
+                else
+                    temp = coefnames(feformula)[2]
+                    for k in temp
+                        push!(fenames, k)
+                    end
+                end
+                if typeof(coefnames(reformula)[2]) == String
+                    puch!(renames, coefnames(reformula)[2])
+                else
+                    temp = coefnames(reformula)[2]
+                    for k in temp
+                        push!(renames, k)
+                    end
+                end
+            end   
 
             # group by id and construct obsvec
             datatable_grouped = datatable |> @groupby(_.id) |> collect
