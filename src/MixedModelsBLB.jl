@@ -5,12 +5,10 @@ module MixedModelsBLB
 using MathProgBase
 using Reexport
 using Distributions
-# using JuliaDB
 using Random
 using StatsModels
 using StatsBase
-# using DataFrames
-# using CSV
+using DataFrames
 using InteractiveUtils
 using Permutations
 using LinearAlgebra
@@ -25,7 +23,6 @@ import LinearAlgebra: BlasFloat, checksquare
 
 @reexport using Ipopt
 @reexport using NLopt
-# @reexport using MixedModels
 
 export blblmmObs, blblmmModel
 export update_w!, init_ls!, fit!, loglikelihood! # lmm.jl

@@ -540,13 +540,6 @@ blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name
 
 
 
-# work with database
-
-# estabslish a connection, filter out a subset
-# 
-
-
-
 
 """
     blb_db(rng, con; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose,  nonparametric_boot)
@@ -595,8 +588,8 @@ function blb_db(
     # # Get the unique ids, which will be used for subsetting
     # typeof(id_name) <: String && (id_name = Symbol(id_name))
 
-    query = string("SELECT ", id_name, " FROM ", table_name, ";")
-    unique_id = unique(DataFrame(DBInterface.execute(con,  query))[:, id_name])
+    query = string("SELECT DISTINCT(", id_name, ") FROM ", table_name, ";")
+    unique_id = DataFrame(DBInterface.execute(con,  query))[:, id_name]
     N = length(unique_id)
     if N < subset_size
         error(string("The subset size should not be bigger than the total number of clusters. \n", 
@@ -711,6 +704,9 @@ function blb_db(
             # filter data using subset_id
             query = string("SELECT * FROM ", table_name, " WHERE id IN (SELECT id FROM ", subset_table, ");")
             datatable = DBInterface.execute(con,  query) |> DataFrame
+            # drop the temp table
+            query = string("DROP TABLE IF EXISTS ", subset_table, ";")
+            DBInterface.execute(con,  query)
 
             # apply schema
             feformula = apply_schema(feformula, schema(feformula, datatable))
