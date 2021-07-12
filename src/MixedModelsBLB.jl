@@ -68,39 +68,6 @@ struct blblmmObs{T <: LinearAlgebra.BlasReal}
     storage_qq_2::Matrix{T}
     storage_qq_3::Matrix{T}
     storage_qp::Matrix{T}
-    
-    # # data
-    # y          :: Vector{T}
-    # X          :: Matrix{T}
-    # Z          :: Matrix{T}
-    # # gradient
-    # ∇β         :: Vector{T}
-    # ∇σ²        :: Vector{T}
-    # ∇Σ         :: Matrix{T}
-    # # Hessian
-    # Hββ        :: Matrix{T}
-    # HLL        :: Matrix{T}
-    # Hσ²σ²      :: Matrix{T}
-    # Hσ²L       :: Matrix{T}
-    # Hσ²Lvec       :: Vector{T}
-    # # TODO: add whatever intermediate arrays you may want to pre-allocate
-    # yty        :: T
-    # xty        :: Vector{T}
-    # zty        :: Vector{T}
-    # ztr        :: Vector{T}
-    # ltztr      :: Vector{T}
-    # xtr        :: Vector{T}
-    # storage_p  :: Vector{T}
-    # storage_q  :: Vector{T}
-    # xtx        :: Matrix{T}
-    # ztx        :: Matrix{T}
-    # ztz        :: Matrix{T}
-    # ltztzl     :: Matrix{T}
-    # lminvlt    :: Matrix{T}
-    # M          :: Matrix{T}
-    # ztΩinvz    :: Matrix{T}
-    # storage_qq :: Matrix{T}
-    # storage_pq :: Matrix{T}
 end
 
 """
@@ -156,41 +123,6 @@ function blblmmObs(
         storage_qq_1, storage_qq_2, storage_qq_3,
         storage_qp
     )
-
-    # y::Vector{T}, 
-    # X::Matrix{T}, 
-    # Z::Matrix{T}) where T <: AbstractFloat
-    # n, p, q    = size(X, 1), size(X, 2), size(Z, 2) 
-    # ∇β         = Vector{T}(undef, p)
-    # ∇σ²        = Vector{T}(undef, 1)
-    # ∇Σ         = Matrix{T}(undef, q, q)
-    # Hββ        = Matrix{T}(undef, p, p)
-    # HLL        = Matrix{T}(undef, ◺(q), ◺(q))
-    # Hσ²σ²      = Matrix{T}(undef, 1, 1)
-    # Hσ²L       = Matrix{T}(undef, q, q)
-    # Hσ²Lvec    = Vector{T}(undef, ◺(q))
-    # yty        = abs2(norm(y))
-    # xty        = transpose(X) * y
-    # zty        = transpose(Z) * y
-    # ztr        = similar(zty)
-    # ltztr      = similar(zty)
-    # xtr        = Vector{T}(undef, p)
-    # storage_p  = similar(xtr)
-    # storage_q  = Vector{T}(undef, q)
-    # xtx        = transpose(X) * X
-    # ztx        = transpose(Z) * X
-    # ztz        = transpose(Z) * Z
-    # ltztzl     = similar(ztz)
-    # lminvlt    = similar(ztz)
-    # M          = similar(ztz)
-    # ztΩinvz    = similar(ztz)
-    # storage_qq = similar(ztz)
-    # storage_pq = Matrix{T}(undef, p, q)
-    # blblmmObs(y, X, Z, ∇β, ∇σ², ∇Σ, Hββ, HLL, Hσ²σ², Hσ²L, Hσ²Lvec,
-    #     yty, xty, zty, ztr, ltztr, xtr,
-    #     storage_p, storage_q, 
-    #     xtx, ztx, ztz, ltztzl, lminvlt, M, ztΩinvz, 
-    #     storage_qq, storage_pq)
 end
 
 
