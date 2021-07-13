@@ -59,7 +59,7 @@ jobs:
           julia --project=docs -e '
             using Pkg
             Pkg.add("Documenter")
-            Pkg.add("https://github.com/xinkai-zhou/MixedModelsBLB.jl")'
+            Pkg.add(url="https://github.com/xinkai-zhou/MixedModelsBLB.jl")'
       - run: |
           julia --project=docs -e '
             using Pkg
