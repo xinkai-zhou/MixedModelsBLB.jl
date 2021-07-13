@@ -17,21 +17,11 @@ jobs:
       matrix:
         version:
           - "1.5"
-          - "1.6"
         os:
           - ubuntu-latest
           - macOS-latest
         arch:
           - x64
-        include:
-          # - os: windows-latest
-          #   version: 1.5
-          #   experimental: true
-          #   arch: x64
-          - os: windows-latest
-            version: 1.5
-            experimental: true
-            arch: x64
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@v1
@@ -68,7 +58,8 @@ jobs:
       - run: | # add unregistered packages first
           julia --project=docs -e '
             using Pkg
-            pkg"add https://github.com/xinkai-zhou/MixedModelsBLB.jl"'
+            Pkg.add("Documenter")
+            Pkg.add("https://github.com/xinkai-zhou/MixedModelsBLB.jl")'
       - run: |
           julia --project=docs -e '
             using Pkg

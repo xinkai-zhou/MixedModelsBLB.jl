@@ -16,7 +16,7 @@ using Documenter, MixedModelsBLB
 # using Documenter: Documenter, makedocs, deploydocs
 # using PkgTemplates: PkgTemplates
 
-makedocs(;
+makedocs(
     modules=[MixedModelsBLB],
     authors="Xinkai Zhou, Hua Zhou",
     repo="https://github.com/xinkai-zhou/MixedModelsBLB.jl.git/blob/{commit}{path}#{line}",
@@ -37,5 +37,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/xinkai-zhou/MixedModelsBLB.jl",
+    repo="github.com/xinkai-zhou/MixedModelsBLB.jl.git",
+    target = "build"
 )

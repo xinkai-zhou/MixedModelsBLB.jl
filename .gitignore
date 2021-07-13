@@ -3,6 +3,7 @@ db.jl
 
 # documentation
 docs/build/
+docs/site/
 
 # archived code
 src/code_archive.jl
