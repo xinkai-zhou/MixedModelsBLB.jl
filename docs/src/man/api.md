@@ -13,4 +13,10 @@ Pages = ["api.md"]
 ```@docs
 blb_one_subset
 blb_full_data
+blb_db
+SubsetEstimates
+blbEstimates
+confint
+fixef
+vc
 ```
