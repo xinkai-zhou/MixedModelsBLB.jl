@@ -7,5 +7,5 @@
 
 
 
-MixedModelsBLB.jl is a Julia package for analyzing massive longitudinal data using Linear Mixed Models (LMMs) through the Bag of Little Bootstrap (BLB) method. It offers significant speedup compared to the traditional bootstrap-based LMM analysis. See [documentation](https://xinkai-zhou.github.io/MixedModelsBLB.jl/stable) for more details. 
+MixedModelsBLB.jl is a Julia package for analyzing massive longitudinal data using Linear Mixed Models (LMMs) through the Bag of Little Bootstrap (BLB) method. It offers significant speedup compared to the traditional bootstrap-based LMM analysis. See [documentation](https://xinkai-zhou.github.io/MixedModelsBLB.jl/dev) for more details. 
 
