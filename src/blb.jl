@@ -50,6 +50,8 @@ struct blbEstimates{T <: LinearAlgebra.BlasReal}
     # subset estimates from all subsets
     all_estimates::Vector{SubsetEstimates{T}}
     runtime::Vector{Float64}
+    # estimation method
+    method::Symbol
 end
 
 """
@@ -81,48 +83,73 @@ function save_bootstrap_result!(
     subset_estimates.σ²s[i] = σ²
 end
 
+"""
+    update_w!(m, w)
+
+Update the weight vector `m.w` using `w`.
+"""
+function update_w!(
+    m::Union{blblmmModel{T}, WSVarLmmModel{T}},
+    w::Vector{Int64}
+    ) where T <: BlasReal
+    if typeof(m) == blblmmModel{T}
+        copyto!(m.w, w)
+    else
+        copyto!(m.obswts, w)
+    end
+end
 
 """
-    blb_one_subset(rng, m; n_boots, solver, verbose, nonparametric_boot)
+    blb_one_subset(rng, m; N, subset_size, n_boots, method, solver, verbose, nonparametric_boot)
 
 Performs Bag of Little Bootstraps on a subset. 
 
 # Positional arguments 
 - `rng`: random number generator. Default to the global rng.
-- `m`: an object of the blblmmModel type
+- `m`: an object of type blblmmModel or WSVarLmmModel
 
 # Keyword arguments
-- `n_boots`: number of bootstrap iterations. Default to 1000
+- `N`: number of individuals/clusters in the full dataset.
+- `subset_size`: number of individuals/clusters in each subset.
+- `n_boots`: number of bootstrap iterations. Default to 1000.
+- `method`: a symbol, either `:ML` or `:WiSER`.
 - `solver`: solver for the optimization problem. 
-- `verbose`: Bool, whether to print bootstrap progress
-- `nonparametric_boot`: Bool, whether to use nonparametric bootstrap
+- `verbose`: Bool, whether to print bootstrap progress.
+- `nonparametric_boot`: Bool, whether to use nonparametric bootstrap. For WiSER models, only nonparametric bootstrap is supported.
 
 # Values
 - `subset_estimates`: an object of type `SubsetEstimates`
 """
 function blb_one_subset(
     rng::Random.AbstractRNG,
-    m::blblmmModel{T};
+    m::Union{blblmmModel{T}, WSVarLmmModel{T}};
+    N::Int64, 
+    subset_size::Int64,
     n_boots::Int = 1000,
+    method::Symbol,
     solver,
     verbose::Bool,
     nonparametric_boot::Bool
     ) where T <: BlasReal 
 
-    # Initalize model parameters
-    init_ls!(m)
-    # Fit LMM on the subset
-    fit!(m, solver)
+    if method == :ML
+        MixedModelsBLB.init_ls!(m)
+        MixedModelsBLB.fit!(m, solver)
+    else
+        WiSER.init_ls!(m)
+        WiSER.fit!(m, solver, verbose = verbose)
+    end
+
     # Initalize an instance of SubsetEstimates type for storing results
     subset_estimates = SubsetEstimates(n_boots, m.p, m.q)
 
     # construct the simulator
     if nonparametric_boot
         verbose && print("Using Non-parametric Bootstrap\n")
-        simulator = NonparametricBootSimulator(m)
+        simulator = NonparametricBootSimulator(m, N = N, subset_size = subset_size)
     else
         verbose && print("Using Parametric Bootstrap\n")
-        simulator = ParametricBootSimulator(m)
+        simulator = ParametricBootSimulator(m, N = N, subset_size = subset_size)
     end
 
     # Bootstrapping
@@ -138,28 +165,39 @@ function blb_one_subset(
         end
 
         # Get weights by drawing N i.i.d. samples from multinomial
-        rand!(rng, simulator.mult_dist, simulator.ns) 
+        Random.rand!(rng, simulator.mult_dist, simulator.ns) 
         
         # Update weights in blblmmModel
         update_w!(m, simulator.ns)
         
         # Fit model on the bootstrap sample
-        fit!(m, solver)
+        if method == :ML
+            MixedModelsBLB.fit!(m, solver)
+        else
+            WiSER.fit!(m, solver, verbose = verbose)
+        end
         
         # Save estimates
-        save_bootstrap_result!(subset_estimates, k, m.β, m.Σ, m.σ²[1])
-
-        # Reset model parameter to subset estimates because
-        # using the bootstrap estimates from each iteration may be unstable.
-        copyto!(m.β, simulator.β_subset)
-        copyto!(m.Σ, simulator.Σ_subset)
-        copyto!(m.σ², simulator.σ²_subset)
+        if method == :ML
+            save_bootstrap_result!(subset_estimates, k, m.β, m.Σ, m.σ²[1])
+        else
+            save_bootstrap_result!(subset_estimates, k, m.β, m.Σγ, exp(m.τ[1]))
+        end
+        
+        if !nonparametric_boot
+            # Reset model parameter to subset estimates because
+            # using the bootstrap estimates from each iteration may be unstable.
+            copyto!(m.β, simulator.β_subset)
+            copyto!(m.Σ, simulator.Σ_subset)
+            copyto!(m.σ², simulator.σ²_subset)
+        end
     end
     return subset_estimates
 end
-blb_one_subset(m::blblmmModel; n_boots::Int = 1000, solver, verbose::Bool, nonparametric_boot::Bool) = 
-    blb_one_subset(Random.GLOBAL_RNG, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
-
+blb_one_subset(m::Union{blblmmModel, WSVarLmmModel}; N::Int64, subset_size::Int64, n_boots::Int = 1000, 
+                method::Symbol, solver, verbose::Bool, nonparametric_boot::Bool)  = 
+    blb_one_subset(Random.GLOBAL_RNG, m; N = N, subset_size = subset_size, n_boots = n_boots, method = method, 
+                    solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
 
 
 """
@@ -170,7 +208,7 @@ Constructor for the type `blblmmObs`
 # Positional arguments 
 - `data_obs`: a table object that is compatible with Tables.jl
 - `feformula`: the formula for the fixed effects
-- `reformula`: the formula for the fixed effects
+- `reformula`: the formula for the random effects
 """
 function blblmmobs(data_obs, feformula::FormulaTerm, reformula::FormulaTerm)
     y, X = StatsModels.modelcols(feformula, data_obs)
@@ -178,6 +216,26 @@ function blblmmobs(data_obs, feformula::FormulaTerm, reformula::FormulaTerm)
     return blblmmObs(y, X, Z)
 end
 blblmmobs(feformula::FormulaTerm, reformula::FormulaTerm) = data_obs -> blblmmobs(data_obs, feformula, reformula)
+
+"""
+    wsvarlmmobs(datatable)
+
+Constructor for the type `WSVarLmmObs`
+
+# Positional arguments 
+- `data_obs`: a table object that is compatible with `Tables.jl`
+- `feformula`: formula for the fixed effects
+- `reformula`: formula for the random effects
+- `wsvarformula`: formula for the fixed effects of the within-subject variance
+"""
+function wsvarlmmobs(data_obs, feformula::FormulaTerm, reformula::FormulaTerm, wsvarformula::FormulaTerm)
+    y, X = StatsModels.modelcols(feformula, data_obs)
+    Z = StatsModels.modelmatrix(reformula, data_obs)
+    W = StatsModels.modelmatrix(wsvarformula, data_obs)
+    return WSVarLmmObs(y, X, Z, W)
+end
+wsvarlmmobs(feformula::FormulaTerm, reformula::FormulaTerm, wsvarformula::FormulaTerm) = 
+    data_obs -> wsvarlmmobs(data_obs, feformula, reformula, wsvarformula)
 
 """
     count_levels(data_columns, cat_names)
@@ -263,7 +321,7 @@ function x_in_y(x::T, sorted_y::Vector{T}, k::Int) where T
 end
 
 """
-    blb_full_data(rng, datatable; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose,  nonparametric_boot)
+    blb_full_data(rng, datatable; feformula, reformula, wsvarformula, id_name, cat_names, subset_size, n_subsets, n_boots, method, solver, verbose,  nonparametric_boot)
 
 Performs Bag of Little Bootstraps on the full dataset
 
@@ -274,12 +332,14 @@ Performs Bag of Little Bootstraps on the full dataset
 # Keyword arguments
 - `feformula`: model formula for the fixed effects.
 - `reformula`: model formula for the random effects.
+- `wsvarformula`: model formula for the fixed effects of the within-subject variance. For linear mixed models, it should be `@formula(y ~ 1)`. Only need to be specified when `method = :WiSER`. 
 - `id_name`: name of the cluster identifier variable. String.
 - `cat_names`: a vector of the names of the categorical variables.
 - `subset_size`: number of clusters in the subset. 
 - `n_subsets`: number of subsets.
 - `n_boots`: number of bootstrap iterations. Default to 1000
 - `solver`: solver for the optimization problem. 
+- `method`: fitting the model by maximum-likelihood (:ML) or GEE (:WiSER)
 - `verbose`: Bool, whether to print bootstrap progress (percentage completion)
 - `nonparametric_boot`: Bool, whether to use Nonparametric bootstrap
 
@@ -291,16 +351,23 @@ function blb_full_data(
     datatable;
     feformula::FormulaTerm,
     reformula::FormulaTerm,
+    wsvarformula::Union{FormulaTerm, Nothing} = nothing,
     id_name::String,
     cat_names::Vector{String} = Vector{String}(),
     subset_size::Int,
     n_subsets::Int = 10,
     n_boots::Int = 1000,
+    method::Symbol = :ML,
     solver = Ipopt.IpoptSolver(print_level=0, mehrotra_algorithm = "yes", warm_start_init_point = "yes"),
     verbose::Bool = false,
-    # use_threads::Bool = false,
     nonparametric_boot::Bool = true
     )
+
+    method ∉ [:ML, :WiSER] && error("`method` must be :ML or :WiSER.")
+    if method == :WiSER && nonparametric_boot == false
+        error("When method = :WiSER, use nonparametric bootstrap only.")
+    end
+
     # Create Tables.Columns type for subsequent processing
     datatable_cols = Tables.columns(datatable) # This step does not allocate memory
     # Get the unique ids, which will be used for subsetting
@@ -317,34 +384,36 @@ function blb_full_data(
     # apply df-wide schema
     feformula = apply_schema(feformula, schema(feformula, datatable))
     reformula = apply_schema(reformula, schema(reformula, datatable))
-    
-    #fenames = coefnames(feformula)[2]
-    if typeof(coefnames(feformula)[2]) == String
-        fenames = [coefnames(feformula)[2]]
-    else
-        fenames = coefnames(feformula)[2]
+    if method == :WiSER
+        wsvarformula = apply_schema(wsvarformula, schema(wsvarformula, datatable))
     end
 
-    if typeof(coefnames(reformula)[2]) == String
-        renames = [coefnames(reformula)[2]]
+    #fenames = coefnames(feformula)[2]
+    if typeof(StatsModels.coefnames(feformula)[2]) == String
+        fenames = [StatsModels.coefnames(feformula)[2]]
     else
-        renames = coefnames(reformula)[2]
+        fenames = StatsModels.coefnames(feformula)[2]
     end
-    
-    # f = @formula(y ~ 1+a)
-    # f = apply_schema(f, schema(f, df))
-    # if typeof(coefnames(f)[2]) == String
-    #     renames = [coefnames(f)[2]]
-    # else
-    #     renames = coefnames(f)[2]
-    # end
+
+    if typeof(StatsModels.coefnames(reformula)[2]) == String
+        renames = [StatsModels.coefnames(reformula)[2]]
+    else
+        renames = StatsModels.coefnames(reformula)[2]
+    end
+
+    if method == :WiSER
+        if typeof(StatsModels.coefnames(wsvarformula)[2]) == String
+            wsvarnames = [StatsModels.coefnames(wsvarformula)[2]]
+        else
+            wsvarnames = StatsModels.coefnames(wsvarformula)[2]
+        end
+    end
 
     # By chance, some factors of a categorical variable may not show up in a subset. 
     # To make sure this does not happen, we
     # 1. count the number of levels of each categorical variable in the full data;
     # 2. for each sampled subset, we check whether the number of levels match. 
     # If they do not match, the subset is resampled.
-
     if length(cat_names) > 0
         cat_levels = count_levels(datatable_cols, cat_names)
     else
@@ -355,8 +424,14 @@ function blb_full_data(
     subset_id = Vector{eltype(unique_id)}(undef, subset_size)
     # Initialize a vector of SubsetEstimates for storing estimates from subsets
     all_estimates = Vector{SubsetEstimates{Float64}}(undef, n_subsets)
-    # Initialize a vector of the blblmmObs objects
-    obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
+    # Initialize a vector of obsvec
+    if method == :ML
+        obsvec = Vector{blblmmObs{Float64}}(undef, subset_size)
+    else
+        obsvec = Vector{WSVarLmmObs{Float64}}(undef, subset_size)
+        clswts = ones(subset_size)
+        respname = StatsModels.coefnames(feformula)[1]
+    end
     # Initialize a vector for storing the runtime
     # Currently, runtime doesn't make sense when there are multiple workers
     runtime = Vector{Float64}(undef, n_subsets)
@@ -384,21 +459,24 @@ function blb_full_data(
             subsetting!(rng, subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
             # if use_groupby
-            obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+            if method == :ML
+                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
                         @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
-            # else
-            #     Threads.@threads for i in 1:subset_size
-            #         obsvec[i] = datatable_cols |> 
-            #             TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
-            #             Tables.columns |> 
-            #             blblmmobs(feformula, reformula)
-            #     end
-            # end
-            # Construct the blblmmModel type
-            m = blblmmModel(obsvec, fenames, renames, N)#, use_threads) 
+                # Construct the blblmmModel type
+                m = blblmmModel(obsvec, fenames, renames, N)
+            else
+                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+                        @map(wsvarlmmobs(_, feformula, reformula, wsvarformula)) |> collect |> Array{WSVarLmmObs{Float64}, 1}
+                m = WSVarLmmModel(obsvec, obswts = clswts, respname = respname, meannames = fenames, 
+                                    renames = renames, wsvarnames = wsvarnames, 
+                                    meanformula = feformula, reformula = reformula, wsvarformula = wsvarformula, 
+                                    ids = subset_id)
+            end
+            
             # Process this subset on worker "wks_schedule[j]"
             futures[j] = remotecall(blb_one_subset, wks_schedule[j], rng, m; 
-                                    n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
+                                    N = N, subset_size = subset_size, n_boots = n_boots, method = method, 
+                                    solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
             # A remote call returns a Future to its result. Remote calls return immediately; 
             # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
             # You can wait for a remote call to finish by calling wait on the returned Future, 
@@ -416,37 +494,36 @@ function blb_full_data(
             # Take a subset
             subsetting!(rng, subset_id, datatable_cols, id_name, unique_id, cat_names, cat_levels)
             # Construct blblmmObs objects
-            # if use_groupby
-            obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+            if method == :ML
+                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
                         @map(blblmmobs(_, feformula, reformula)) |> collect |> Array{blblmmObs{Float64}, 1}
-            # else
-            #     Threads.@threads for i in 1:subset_size
-            #         obsvec[i] = datatable_cols |> 
-            #             TableOperations.filter(x -> Tables.getcolumn(x, id_name) == subset_id[i]) |> 
-            #             Tables.columns |> 
-            #             blblmmobs(feformula, reformula)
-            #     end
-            # end
-            # Construct the blblmmModel type
-            m = blblmmModel(obsvec, fenames, renames, N)#, use_threads) 
-            all_estimates[j] = blb_one_subset(rng, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
+                # Construct the blblmmModel type
+                m = blblmmModel(obsvec, fenames, renames, N)
+            else
+                obsvec = datatable_grouped |> @filter(x_in_y(key(_), subset_id, subset_size)) |> 
+                        @map(wsvarlmmobs(_, feformula, reformula, wsvarformula)) |> collect |> Array{WSVarLmmObs{Float64}, 1}
+                m = WSVarLmmModel(obsvec, obswts = clswts, respname = respname, meannames = fenames, 
+                                    renames = renames, wsvarnames = wsvarnames, 
+                                    meanformula = feformula, reformula = reformula, wsvarformula = wsvarformula, 
+                                    ids = subset_id)
+            end
+            all_estimates[j] = blb_one_subset(rng, m; N = N, subset_size = subset_size, n_boots = n_boots, method = method, 
+                                              solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
             runtime[j] = (time_ns() - time0) / 1e9
         end
     end
-
     # Create a blbEstimates instance for storing results from all subsets
-    result = blbEstimates{Float64}(n_subsets, subset_size, n_boots, fenames, renames, all_estimates, runtime)
+    result = blbEstimates{Float64}(n_subsets, subset_size, n_boots, fenames, renames, all_estimates, runtime, method)
     return result
 end
 
-blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, id_name::String, 
+blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, wsvarformula::Union{FormulaTerm, Nothing} = nothing, id_name::String, 
                 cat_names::Vector{String} = Vector{String}(), subset_size::Int, n_subsets::Int = 10, n_boots::Int = 200, 
-                solver = Ipopt.IpoptSolver(), verbose::Bool = false, nonparametric_boot::Bool = true) = 
-    blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, id_name = id_name, 
-                    cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
-                    solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
-
-
+                method::Symbol = :ML, solver = Ipopt.IpoptSolver(), verbose::Bool = false, nonparametric_boot::Bool = true) = 
+                    wsvarformula::Union{FormulaTerm, Null},
+    blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, wsvarformula = wsvarformula, 
+                id_name = id_name, cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
+                method = method, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
 
 
 """
@@ -817,6 +894,7 @@ end
 
 function Base.show(io::IO, blb_ests::blbEstimates)
     println("Bag of Little Boostrap (BLB) for linear mixed models.")
+    println("Method: ", blb_ests.method)
     println("Number of subsets: ", blb_ests.n_subsets)
     println("Number of grouping factors per subset: ", blb_ests.subset_size)
     println("Number of bootstrap samples per subset: ", blb_ests.n_boots)
@@ -829,12 +907,12 @@ function Base.show(io::IO, blb_ests::blbEstimates)
     mean_Σ, mean_σ² = vc(blb_ests)
 
     println("Variance Components parameters")
-    show(io, coeftable(vcat(vectorize_Σ(mean_Σ), mean_σ²), vcat(ci_Σ, ci_σ²), vc_names(blb_ests)))
+    show(io, StatsBase.coeftable(vcat(vectorize_Σ(mean_Σ), mean_σ²), vcat(ci_Σ, ci_σ²), vc_names(blb_ests)))
     println(io)
     println(io)
     
     println("Fixed-effect parameters")
-    show(io, coeftable(vec(mean_β), ci_β, blb_ests.fenames))
+    show(io, StatsBase.coeftable(vec(mean_β), ci_β, blb_ests.fenames))
 end
 
 

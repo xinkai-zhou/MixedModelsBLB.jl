@@ -1,7 +1,7 @@
 name = "MixedModelsBLB"
 uuid = "85c86336-00e0-11ea-3bde-951e8ffc0035"
 authors = ["xinkai-zhou <xinkaizhou@g.ucla.edu>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"

@@ -1,16 +1,5 @@
 
 
-"""
-    update_w!(m, w)
-
-Update the weight vector `m.w` using `w`.
-"""
-function update_w!(
-    m::blblmmModel{T}, 
-    w::Vector{Int64}
-    ) where T <: BlasReal
-    copyto!(m.w, w)
-end
 
 """
     init_ls!(m::blblmmModel)

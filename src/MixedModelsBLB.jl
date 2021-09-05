@@ -17,6 +17,7 @@ using TableOperations
 using Distributed
 using Query
 using DBInterface
+using WiSER
 
 using LinearAlgebra: BlasReal, copytri!
 import LinearAlgebra: BlasFloat, checksquare
@@ -28,7 +29,7 @@ export blblmmObs, blblmmModel
 export update_w!, init_ls!, fit!, loglikelihood! # lmm.jl
 export SubsetEstimates, blbEstimates, save_bootstrap_result!, blb_one_subset, blb_full_data, blb_db # blb.jl
 export confint, fixef, vc, coeftable # blb.jl
-export Simulator, simulate! # simulate.jl
+export NonparametricBootSimulator, ParametricBootSimulator, simulate! # simulate.jl
 export ◺ # multivariate_calculus.jl
 
 """
@@ -136,8 +137,8 @@ struct blblmmModel{T <: BlasReal} <: MathProgBase.AbstractNLPEvaluator
     data::Vector{blblmmObs{T}}
     fenames::Vector{String} # a vector of the fixed effect variable names
     renames::Vector{String} # a vector of the random effect variable names
-    N::Int    # total number of unique IDs (individuals) in the full data set
-    b::Int    # total number of unique IDs (individuals) in the subset
+    #N::Int    # total number of unique IDs (individuals) in the full data set
+    #b::Int    # total number of unique IDs (individuals) in the subset
     p::Int            # number of fixed effect parameters
     q::Int            # number of random effect parameters
     q◺::Int           # number of parameters in the cholesky factor of Σ
@@ -210,7 +211,8 @@ function blblmmModel(
     # ntotal = 0
     blblmmModel{T}(
         obsvec, fenames, renames, 
-        N, b, p, q, q◺, w,
+        # N, b, p, q, q◺, w,
+        p, q, q◺, w,
         β, σ², Σ, ΣL, 
         ∇β, ∇σ², ∇L, Hββ, Hσ²σ², Hσ²L, HLL,
         xtx, xty, ztz2, ztr2, diagidx
