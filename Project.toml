@@ -28,4 +28,3 @@ WiSER = "2ff19380-1883-49fc-9d10-450face6b90c"
 
 [compat]
 Query = "1"
-KNITRO = "0.9.3"
