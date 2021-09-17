@@ -520,7 +520,6 @@ end
 blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, wsvarformula::Union{FormulaTerm, Nothing} = nothing, id_name::String, 
                 cat_names::Vector{String} = Vector{String}(), subset_size::Int, n_subsets::Int = 10, n_boots::Int = 200, 
                 method::Symbol = :ML, solver = Ipopt.IpoptSolver(), verbose::Bool = false, nonparametric_boot::Bool = true) = 
-                    wsvarformula::Union{FormulaTerm, Null},
     blb_full_data(Random.GLOBAL_RNG, datatable; feformula = feformula, reformula = reformula, wsvarformula = wsvarformula, 
                 id_name = id_name, cat_names = cat_names, subset_size = subset_size, n_subsets = n_subsets, n_boots = n_boots, 
                 method = method, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
