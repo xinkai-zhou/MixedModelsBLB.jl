@@ -757,23 +757,41 @@ Calculate confidence intervals using estimates from one subset.
 - `level`: confidence level, usually set to 0.95
 """
 function confint(subset_ests::SubsetEstimates, level::Real)
+    # ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
+    # for i in 1:subset_ests.p
+    #     ci_βs[i, :] = StatsBase.percentile(view(subset_ests.βs, :, i), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+    # end
+    # q = subset_ests.q
+    # ci_Σs = Matrix{Float64}(undef, ◺(q), 2)
+    # k = 1
+    # # For Σ, we get the CI for the diagonals first, then the upper off-diagonals
+    # @inbounds for i in 1:q
+    #     ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, i, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+    #     k += 1
+    # end
+    # @inbounds for i in 1:q, j in (i+1):q
+    #     ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, j, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+    #     k += 1
+    # end
+    # ci_σ²s = reshape(StatsBase.percentile(subset_ests.σ²s, 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
+    # return ci_βs, ci_Σs, ci_σ²s
     ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
     for i in 1:subset_ests.p
-        ci_βs[i, :] = StatsBase.percentile(view(subset_ests.βs, :, i), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        ci_βs[i, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.βs, :, i)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
     end
     q = subset_ests.q
     ci_Σs = Matrix{Float64}(undef, ◺(q), 2)
     k = 1
     # For Σ, we get the CI for the diagonals first, then the upper off-diagonals
     @inbounds for i in 1:q
-        ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, i, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, i, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
         k += 1
     end
     @inbounds for i in 1:q, j in (i+1):q
-        ci_Σs[k, :] = StatsBase.percentile(view(subset_ests.Σs, i, j, :), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, j, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
         k += 1
     end
-    ci_σ²s = reshape(StatsBase.percentile(subset_ests.σ²s, 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
+    ci_σ²s = reshape(StatsBase.percentile(filter(y -> !isnan(y), subset_ests.σ²s), 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
     return ci_βs, ci_Σs, ci_σ²s
 end
 
