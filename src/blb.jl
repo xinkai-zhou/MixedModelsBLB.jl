@@ -836,13 +836,13 @@ function confint(blb_ests::blbEstimates, level::Real)
         ci_β  = mean(cis_βs, dims = 3)[:, :, 1]
     end
 
-    if any(y -> isnan(y), ci_Σ)
+    if any(y -> isnan(y), ci_Σs)
         ci_Σ = fill(NaN, (◺(blb_ests.all_estimates[1].q), 2))
     else
         ci_Σ  = mean(cis_Σs, dims = 3)[:, :, 1]
     end
 
-    if any(y -> isnan(y), ci_σ²)
+    if any(y -> isnan(y), ci_σ²s)
         ci_σ² = [NaN, NaN]
     else
         ci_σ² = mean(cis_σ²s, dims = 3)[:, :, 1]
