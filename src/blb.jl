@@ -777,21 +777,37 @@ function confint(subset_ests::SubsetEstimates, level::Real)
     # return ci_βs, ci_Σs, ci_σ²s
     ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
     for i in 1:subset_ests.p
-        ci_βs[i, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.βs, :, i)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        if all(y -> isnan(y), view(subset_ests.βs, :, i))
+            ci_βs[i, :] = NaN
+        else
+            ci_βs[i, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.βs, :, i)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        end
     end
     q = subset_ests.q
     ci_Σs = Matrix{Float64}(undef, ◺(q), 2)
     k = 1
     # For Σ, we get the CI for the diagonals first, then the upper off-diagonals
     @inbounds for i in 1:q
-        ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, i, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        if all(y -> isnan(y), view(subset_ests.Σs, i, i, :))
+            ci_Σs[k, :] = NaN
+        else
+            ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, i, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        end
         k += 1
     end
     @inbounds for i in 1:q, j in (i+1):q
-        ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, j, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        if all(y -> isnan(y), view(subset_ests.Σs, i, j, :))
+            ci_Σs[k, :] = NaN
+        else
+            ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, j, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
+        end
         k += 1
     end
-    ci_σ²s = reshape(StatsBase.percentile(filter(y -> !isnan(y), subset_ests.σ²s), 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
+    if all(y -> isnan(y), subset_ests.σ²s)
+        ci_σ²s = NaN
+    else
+        ci_σ²s = reshape(StatsBase.percentile(filter(y -> !isnan(y), subset_ests.σ²s), 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
+    end
     return ci_βs, ci_Σs, ci_σ²s
 end
 
@@ -813,12 +829,30 @@ function confint(blb_ests::blbEstimates, level::Real)
     @inbounds for i in 1:blb_ests.n_subsets
         cis_βs[:, :, i], cis_Σs[:, :, i], cis_σ²s[:, :, i] = confint(blb_ests.all_estimates[i], level)
     end
-    ci_β  = mean(cis_βs, dims = 3)[:, :, 1]
-    ci_Σ  = mean(cis_Σs, dims = 3)[:, :, 1]
-    ci_σ² = mean(cis_σ²s, dims = 3)[:, :, 1]
+
+    if any(y -> isnan(y), cis_βs)
+        ci_β = fill(NaN, (blb_ests.all_estimates[1].p, 2))
+    else
+        ci_β  = mean(cis_βs, dims = 3)[:, :, 1]
+    end
+
+    if any(y -> isnan(y), ci_Σ)
+        ci_Σ = fill(NaN, (◺(blb_ests.all_estimates[1].q), 2))
+    else
+        ci_Σ  = mean(cis_Σs, dims = 3)[:, :, 1]
+    end
+
+    if any(y -> isnan(y), ci_σ²)
+        ci_σ² = [NaN, NaN]
+    else
+        ci_σ² = mean(cis_σ²s, dims = 3)[:, :, 1]
+    end
+
     return ci_β, ci_Σ, ci_σ²
 end
 confint(blb_ests::blbEstimates) = confint(blb_ests, 0.95)
+
+
 
 
 """
