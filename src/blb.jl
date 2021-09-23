@@ -778,7 +778,7 @@ function confint(subset_ests::SubsetEstimates, level::Real)
     ci_βs = Matrix{Float64}(undef, subset_ests.p, 2) # p-by-2 matrix
     for i in 1:subset_ests.p
         if all(y -> isnan(y), view(subset_ests.βs, :, i))
-            ci_βs[i, :] = NaN
+            ci_βs[i, :] .= NaN
         else
             ci_βs[i, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.βs, :, i)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
         end
@@ -789,7 +789,7 @@ function confint(subset_ests::SubsetEstimates, level::Real)
     # For Σ, we get the CI for the diagonals first, then the upper off-diagonals
     @inbounds for i in 1:q
         if all(y -> isnan(y), view(subset_ests.Σs, i, i, :))
-            ci_Σs[k, :] = NaN
+            ci_Σs[k, :] .= NaN
         else
             ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, i, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
         end
@@ -797,14 +797,14 @@ function confint(subset_ests::SubsetEstimates, level::Real)
     end
     @inbounds for i in 1:q, j in (i+1):q
         if all(y -> isnan(y), view(subset_ests.Σs, i, j, :))
-            ci_Σs[k, :] = NaN
+            ci_Σs[k, :] .= NaN
         else
             ci_Σs[k, :] = StatsBase.percentile(filter(y -> !isnan(y), view(subset_ests.Σs, i, j, :)), 100 * [(1 - level) / 2, 1 - (1-level) / 2])
         end
         k += 1
     end
     if all(y -> isnan(y), subset_ests.σ²s)
-        ci_σ²s = NaN
+        ci_σ²s = [NaN, NaN]
     else
         ci_σ²s = reshape(StatsBase.percentile(filter(y -> !isnan(y), subset_ests.σ²s), 100 * [(1 - level) / 2, 1 - (1-level) / 2]), 1, 2)
     end
