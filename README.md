@@ -1,6 +1,6 @@
 # MixedModelsBLB.jl
 
-![LOGO](http://github.com/xinkai-zhou/MixedModelsBLB/logo-text.png)
+![LOGO](https://github.com/xinkai-zhou/MixedModelsBLB.jl/blob/master/logo-text.png)
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://xinkai-zhou.github.io/MixedModelsBLB.jl/stable)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://xinkai-zhou.github.io/MixedModelsBLB.jl/dev)
