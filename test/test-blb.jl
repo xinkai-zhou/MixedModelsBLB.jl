@@ -6,7 +6,7 @@ using MixedModelsBLB, Random, Distributions, DataFrames, StatsModels, Ipopt, Tes
 # Simulate a dataset
 # βtrue  = ones(3); σ²true = 1; Σtrue  = [1.0 0; 0 1.0]
 rng = StableRNG(123)
-Random.seed!(rng, 123)
+# Random.seed!(rng, 123)
 N = 1000; reps = 10
 x1 = rand(rng, Normal(0, 1), reps * N)
 x2 = rand(rng, Normal(0, 1), reps * N)
