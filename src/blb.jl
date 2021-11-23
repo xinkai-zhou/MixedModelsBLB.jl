@@ -526,7 +526,7 @@ blb_full_data(datatable; feformula::FormulaTerm, reformula::FormulaTerm, wsvarfo
 
 
 """
-    blb_db(rng, con; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose,  nonparametric_boot)
+    blb_db(rng, con, table_name; feformula, reformula, id_name, cat_names, subset_size, n_subsets, n_boots, solver, verbose,  nonparametric_boot)
 
 Performs Bag of Little Bootstraps on databases.
 
@@ -664,7 +664,7 @@ function blb_db(
 
             # Process this subset on worker "wks_schedule[j]"
             futures[j] = remotecall(blb_one_subset, wks_schedule[j], rng, m; 
-                                    n_boots = n_boots, solver = solver, verbose = verbose, 
+                                    n_boots = n_boots, method = :ML, solver = solver, verbose = verbose, 
                                     nonparametric_boot = nonparametric_boot)
             # A remote call returns a Future to its result. Remote calls return immediately; 
             # the process that made the call proceeds to its next operation while the remote call happens somewhere else. 
@@ -733,7 +733,7 @@ function blb_db(
             
             # Construct the blblmmModel type
             m = blblmmModel(obsvec, fenames, renames, N)
-            all_estimates[j] = blb_one_subset(rng, m; n_boots = n_boots, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
+            all_estimates[j] = blb_one_subset(rng, m; n_boots = n_boots, method = :ML, solver = solver, verbose = verbose, nonparametric_boot = nonparametric_boot)
             runtime[j] = (time_ns() - time0) / 1e9
         end
     end
@@ -858,7 +858,7 @@ confint(blb_ests::blbEstimates) = confint(blb_ests, 0.95)
 """
     fixef(blb_ests)
 
-Calculate BLB fixed effect estimates, which are averages of fixed effect estimates from all subsets
+Calculate BLB fixed effect estimates, which are averages of fixed effect estimates from all subsets.
 
 # Positional arguments 
 - `blb_ests`: an object of type `blbEstimates`
@@ -877,7 +877,7 @@ end
 """
     vc(blb_ests)
 
-Calculate BLB variance components estimates, which are averages of variance component estimates from all subsets
+Calculate BLB variance components estimates, which are averages of variance component estimates from all subsets.
 
 # Positional arguments 
 - `blb_ests`: an object of type `blbEstimates`

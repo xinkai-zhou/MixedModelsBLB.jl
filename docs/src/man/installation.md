@@ -1,7 +1,7 @@
 
 # Installation
 
-This package requires Julia v1.4 or later, which can be obtained from https://julialang.org/downloads/.
+This package requires Julia v1.6 or later, which can be obtained from https://julialang.org/downloads/.
 
 To install the package, start Julia and type
 
