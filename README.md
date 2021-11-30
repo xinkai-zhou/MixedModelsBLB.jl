@@ -13,7 +13,7 @@ MixedModelsBLB.jl is a Julia package for analyzing massive longitudinal data usi
 Download and install Julia. Within Julia, copy and paste the following:
 ```
 using Pkg
-pkg "add https://github.com/xinkai-zhou/MixedModelsBLB.jl.git"
+add https://github.com/xinkai-zhou/MixedModelsBLB.jl.git
 ```
 This package supports Julia v1.6+ for Mac, Linux, and window machines.
 
